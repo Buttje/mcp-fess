@@ -43,7 +43,7 @@ def _setup_tools(mcp: FastMCP, domain_id: str) -> None:
         """Search the knowledge domain for documents matching a query."""
         config = _server_state["config"]
         fess_client = _server_state["fess_client"]
-        
+
         if not query:
             raise ValueError("query parameter is required")
 
@@ -75,7 +75,7 @@ def _setup_tools(mcp: FastMCP, domain_id: str) -> None:
         """Suggest related terms for a query in the knowledge domain."""
         config = _server_state["config"]
         fess_client = _server_state["fess_client"]
-        
+
         if not prefix:
             raise ValueError("prefix parameter is required")
 
@@ -100,7 +100,7 @@ def _setup_tools(mcp: FastMCP, domain_id: str) -> None:
         """Retrieve popular words in the knowledge domain."""
         config = _server_state["config"]
         fess_client = _server_state["fess_client"]
-        
+
         result = await fess_client.popular_words(
             label=config.domain.labelFilter, seed=seed, field=field
         )
@@ -143,7 +143,7 @@ def _setup_resources(mcp: FastMCP, domain_id: str) -> None:
         """Document metadata."""
         config = _server_state["config"]
         fess_client = _server_state["fess_client"]
-        
+
         try:
             result = await fess_client.search(
                 query=f"doc_id:{doc_id}",
@@ -167,7 +167,7 @@ def _setup_resources(mcp: FastMCP, domain_id: str) -> None:
         """Full document content."""
         config = _server_state["config"]
         fess_client = _server_state["fess_client"]
-        
+
         try:
             result = await fess_client.search(
                 query=f"doc_id:{doc_id}",
@@ -184,15 +184,13 @@ def _setup_resources(mcp: FastMCP, domain_id: str) -> None:
             if not url:
                 raise ValueError("Document has no URL")
 
-            content, _ = await fess_client.fetch_document_content(
-                url, config.contentFetch
-            )
+            content, _ = await fess_client.fetch_document_content(url, config.contentFetch)
 
             max_chunk = config.limits.maxChunkBytes
             if len(content) <= max_chunk:
-                return content
+                return str(content)
             else:
-                return content[:max_chunk]
+                return str(content[:max_chunk])
 
         except Exception as e:
             logger.error(f"Failed to read resource: {e}")
@@ -200,28 +198,26 @@ def _setup_resources(mcp: FastMCP, domain_id: str) -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastMCP):
+async def lifespan(app: FastMCP) -> Any:
     """Lifespan handler for the FastMCP app."""
     # Startup: Load config and initialize server components
     config = load_config()
     fess_client = FessClient(config.fessBaseUrl, config.timeouts.fessRequestTimeoutMs)
-    
+
     # Store state for use by tools and resources
     _server_state["config"] = config
     _server_state["fess_client"] = fess_client
     _server_state["jobs"] = {}
-    
-    # Update the app name based on config
-    app.name = f"mcp-fess-{config.domain.id}"
-    
+
     # Setup tools and resources
-    _setup_tools(app, config.domain.id)
-    _setup_resources(app, config.domain.id)
-    
-    logger.info("Server components initialized")
-    
+    domain_id = config.domain.id
+    _setup_tools(app, domain_id)
+    _setup_resources(app, domain_id)
+
+    logger.info(f"Server components initialized for domain: {domain_id}")
+
     yield
-    
+
     # Shutdown: Clean up resources
     await fess_client.close()
     logger.info("Server components cleaned up")

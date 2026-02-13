@@ -15,6 +15,5 @@ def test_mcp_instance_exported():
     """Test that the top-level mcp instance is exported."""
     assert hasattr(mcp_fess, "mcp")
     assert isinstance(mcp_fess.mcp, FastMCP)
-    # Verify the name follows the expected pattern
-    assert mcp_fess.mcp.name.startswith("mcp-fess-")
-
+    # Verify the name follows the expected pattern (before lifespan initialization)
+    assert mcp_fess.mcp.name == "mcp-fess"
