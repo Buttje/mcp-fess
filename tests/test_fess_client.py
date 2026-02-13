@@ -175,7 +175,9 @@ async def test_search_with_all_params(fess_client):
     mock_response.json.return_value = {"data": []}
     mock_response.raise_for_status = MagicMock()
 
-    with patch.object(fess_client.client, "get", new=AsyncMock(return_value=mock_response)) as mock_get:
+    with patch.object(
+        fess_client.client, "get", new=AsyncMock(return_value=mock_response)
+    ) as mock_get:
         result = await fess_client.search(
             query="test",
             label_filter="label1",
@@ -206,7 +208,9 @@ async def test_search_minimal_params(fess_client):
     mock_response.json.return_value = {"data": []}
     mock_response.raise_for_status = MagicMock()
 
-    with patch.object(fess_client.client, "get", new=AsyncMock(return_value=mock_response)) as mock_get:
+    with patch.object(
+        fess_client.client, "get", new=AsyncMock(return_value=mock_response)
+    ) as mock_get:
         await fess_client.search("test")
         call_args = mock_get.call_args
         params = call_args.kwargs["params"]
@@ -242,7 +246,9 @@ async def test_suggest_with_all_params(fess_client):
     mock_response.json.return_value = {"suggestions": []}
     mock_response.raise_for_status = MagicMock()
 
-    with patch.object(fess_client.client, "get", new=AsyncMock(return_value=mock_response)) as mock_get:
+    with patch.object(
+        fess_client.client, "get", new=AsyncMock(return_value=mock_response)
+    ) as mock_get:
         result = await fess_client.suggest(
             prefix="test", label="label1", num=20, fields=["title", "content"], lang="en"
         )
@@ -282,7 +288,9 @@ async def test_popular_words_with_all_params(fess_client):
     mock_response.json.return_value = {"words": []}
     mock_response.raise_for_status = MagicMock()
 
-    with patch.object(fess_client.client, "get", new=AsyncMock(return_value=mock_response)) as mock_get:
+    with patch.object(
+        fess_client.client, "get", new=AsyncMock(return_value=mock_response)
+    ) as mock_get:
         result = await fess_client.popular_words(label="label1", seed=12345, field="content")
         assert "words" in result
         call_args = mock_get.call_args
@@ -299,7 +307,9 @@ async def test_popular_words_no_params(fess_client):
     mock_response.json.return_value = {"words": []}
     mock_response.raise_for_status = MagicMock()
 
-    with patch.object(fess_client.client, "get", new=AsyncMock(return_value=mock_response)) as mock_get:
+    with patch.object(
+        fess_client.client, "get", new=AsyncMock(return_value=mock_response)
+    ) as mock_get:
         await fess_client.popular_words()
         call_args = mock_get.call_args
         params = call_args.kwargs["params"]

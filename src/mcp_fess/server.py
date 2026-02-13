@@ -14,6 +14,7 @@ from .logging_utils import setup_logging
 
 logger = logging.getLogger("mcp_fess")
 
+
 class FessServer:
     """MCP server implementation for Fess."""
 
@@ -42,28 +43,27 @@ fessLabel: {domain.labelFilter}"""
 
     def _setup_tools(self) -> None:
         """Set up MCP tools using FastMCP decorators."""
-        domain_block = self._get_domain_block()
 
         @self.mcp.tool(name=f"fess_{self.domain_id}_search")
         async def search(
             query: str,
-            pageSize: int = 20,
+            page_size: int = 20,
             start: int = 0,
             sort: str | None = None,
             lang: str | None = None,
-            includeFields: list[str] | None = None,
+            include_fields: list[str] | None = None,
         ) -> str:
-            f"""Search the knowledge domain for documents matching a query.
-            
-{domain_block}"""
-            return await self._handle_search({
-                "query": query,
-                "pageSize": pageSize,
-                "start": start,
-                "sort": sort,
-                "lang": lang,
-                "includeFields": includeFields,
-            })
+            """Search the knowledge domain for documents matching a query."""
+            return await self._handle_search(
+                {
+                    "query": query,
+                    "pageSize": page_size,
+                    "start": start,
+                    "sort": sort,
+                    "lang": lang,
+                    "includeFields": include_fields,
+                }
+            )
 
         @self.mcp.tool(name=f"fess_{self.domain_id}_suggest")
         async def suggest(
@@ -72,59 +72,50 @@ fessLabel: {domain.labelFilter}"""
             fields: list[str] | None = None,
             lang: str | None = None,
         ) -> str:
-            f"""Suggest related terms for a query in the knowledge domain.
-            
-{domain_block}"""
-            return await self._handle_suggest({
-                "prefix": prefix,
-                "num": num,
-                "fields": fields,
-                "lang": lang,
-            })
+            """Suggest related terms for a query in the knowledge domain."""
+            return await self._handle_suggest(
+                {
+                    "prefix": prefix,
+                    "num": num,
+                    "fields": fields,
+                    "lang": lang,
+                }
+            )
 
         @self.mcp.tool(name=f"fess_{self.domain_id}_popular_words")
         async def popular_words(
             seed: int | None = None,
             field: str | None = None,
         ) -> str:
-            f"""Retrieve popular words in the knowledge domain.
-            
-{domain_block}"""
-            return await self._handle_popular_words({
-                "seed": seed,
-                "field": field,
-            })
+            """Retrieve popular words in the knowledge domain."""
+            return await self._handle_popular_words(
+                {
+                    "seed": seed,
+                    "field": field,
+                }
+            )
 
         @self.mcp.tool(name=f"fess_{self.domain_id}_list_labels")
         async def list_labels() -> str:
-            f"""List all labels configured in the underlying Fess server.
-            
-{domain_block}"""
+            """List all labels configured in the underlying Fess server."""
             return await self._handle_list_labels()
 
         @self.mcp.tool(name=f"fess_{self.domain_id}_health")
         async def health() -> str:
-            f"""Check the health status of the underlying Fess server.
-            
-{domain_block}"""
+            """Check the health status of the underlying Fess server."""
             return await self._handle_health()
 
         @self.mcp.tool(name=f"fess_{self.domain_id}_job_get")
-        async def job_get(jobId: str) -> str:
-            f"""Retrieve progress information for a long-running operation.
-            
-{domain_block}"""
-            return await self._handle_job_get({"jobId": jobId})
+        async def job_get(job_id: str) -> str:
+            """Retrieve progress information for a long-running operation."""
+            return await self._handle_job_get({"jobId": job_id})
 
     def _setup_resources(self) -> None:
         """Set up MCP resources using FastMCP decorators."""
-        domain_block = self._get_domain_block()
 
         @self.mcp.resource(f"fess://{self.domain_id}/doc/{{doc_id}}")
         async def read_doc(doc_id: str) -> str:
-            f"""Document metadata.
-            
-{domain_block}"""
+            """Document metadata."""
             try:
                 result = await self.fess_client.search(
                     query=f"doc_id:{doc_id}",
@@ -145,9 +136,7 @@ fessLabel: {domain.labelFilter}"""
 
         @self.mcp.resource(f"fess://{self.domain_id}/doc/{{doc_id}}/content")
         async def read_doc_content(doc_id: str) -> str:
-            f"""Full document content.
-            
-{domain_block}"""
+            """Full document content."""
             try:
                 result = await self.fess_client.search(
                     query=f"doc_id:{doc_id}",
@@ -285,6 +274,7 @@ fessLabel: {domain.labelFilter}"""
         """Clean up resources."""
         await self.fess_client.close()
 
+
 def main() -> None:
     """Main entry point for the server."""
     parser = argparse.ArgumentParser(description="MCP-Fess Bridge Server")
@@ -333,6 +323,7 @@ def main() -> None:
                 await server.cleanup()
 
         import asyncio
+
         asyncio.run(run_server())
 
     except FileNotFoundError as e:
@@ -346,6 +337,7 @@ def main() -> None:
     except Exception as e:
         logger.exception(f"Fatal error: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

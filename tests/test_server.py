@@ -107,9 +107,7 @@ async def test_handle_suggest_success(fess_server):
     """Test successful suggest."""
     mock_result = {"suggestions": ["test1", "test2"]}
 
-    with patch.object(
-        fess_server.fess_client, "suggest", new=AsyncMock(return_value=mock_result)
-    ):
+    with patch.object(fess_server.fess_client, "suggest", new=AsyncMock(return_value=mock_result)):
         result = await fess_server._handle_suggest({"prefix": "test"})
         assert isinstance(result, str)
         assert "test1" in result
@@ -208,15 +206,13 @@ def test_main_with_stdio():
     """Test main function with stdio transport."""
     test_args = ["--transport", "stdio"]
 
-    with patch("sys.argv", ["mcp_fess", *test_args]), patch(
-        "mcp_fess.server.load_config"
-    ) as mock_load_config, patch(
-        "mcp_fess.server.ensure_log_directory"
-    ) as mock_log_dir, patch(
-        "mcp_fess.server.setup_logging"
-    ) as mock_setup_logging, patch(
-        "asyncio.run"
-    ) as mock_asyncio_run:
+    with (
+        patch("sys.argv", ["mcp_fess", *test_args]),
+        patch("mcp_fess.server.load_config") as mock_load_config,
+        patch("mcp_fess.server.ensure_log_directory") as mock_log_dir,
+        patch("mcp_fess.server.setup_logging") as mock_setup_logging,
+        patch("asyncio.run") as mock_asyncio_run,
+    ):
         mock_config = MagicMock()
         mock_config.domain.name = "Test"
         mock_config.domain.id = "test"
@@ -238,15 +234,13 @@ def test_main_with_http():
     """Test main function with http transport."""
     test_args = ["--transport", "http"]
 
-    with patch("sys.argv", ["mcp_fess", *test_args]), patch(
-        "mcp_fess.server.load_config"
-    ) as mock_load_config, patch(
-        "mcp_fess.server.ensure_log_directory"
-    ) as mock_log_dir, patch(
-        "mcp_fess.server.setup_logging"
-    ) as mock_setup_logging, patch(
-        "asyncio.run"
-    ) as mock_asyncio_run:
+    with (
+        patch("sys.argv", ["mcp_fess", *test_args]),
+        patch("mcp_fess.server.load_config") as mock_load_config,
+        patch("mcp_fess.server.ensure_log_directory") as mock_log_dir,
+        patch("mcp_fess.server.setup_logging") as mock_setup_logging,
+        patch("asyncio.run") as mock_asyncio_run,
+    ):
         mock_config = MagicMock()
         mock_config.domain.name = "Test"
         mock_config.domain.id = "test"
@@ -268,14 +262,12 @@ def test_main_with_debug():
     """Test main function with debug flag."""
     test_args = ["--debug"]
 
-    with patch("sys.argv", ["mcp_fess", *test_args]), patch(
-        "mcp_fess.server.load_config"
-    ) as mock_load_config, patch(
-        "mcp_fess.server.ensure_log_directory"
-    ) as mock_log_dir, patch(
-        "mcp_fess.server.setup_logging"
-    ) as mock_setup_logging, patch(
-        "asyncio.run"
+    with (
+        patch("sys.argv", ["mcp_fess", *test_args]),
+        patch("mcp_fess.server.load_config") as mock_load_config,
+        patch("mcp_fess.server.ensure_log_directory") as mock_log_dir,
+        patch("mcp_fess.server.setup_logging") as mock_setup_logging,
+        patch("asyncio.run"),
     ):
         mock_config = MagicMock()
         mock_config.domain.name = "Test"
@@ -300,15 +292,13 @@ def test_main_with_cody_flag():
     """Test main function with cody flag."""
     test_args = ["--cody"]
 
-    with patch("sys.argv", ["mcp_fess", *test_args]), patch(
-        "mcp_fess.server.load_config"
-    ) as mock_load_config, patch(
-        "mcp_fess.server.ensure_log_directory"
-    ) as mock_log_dir, patch(
-        "mcp_fess.server.setup_logging"
-    ) as mock_setup_logging, patch(
-        "asyncio.run"
-    ) as mock_asyncio_run:
+    with (
+        patch("sys.argv", ["mcp_fess", *test_args]),
+        patch("mcp_fess.server.load_config") as mock_load_config,
+        patch("mcp_fess.server.ensure_log_directory") as mock_log_dir,
+        patch("mcp_fess.server.setup_logging") as mock_setup_logging,
+        patch("asyncio.run") as mock_asyncio_run,
+    ):
         mock_config = MagicMock()
         mock_config.domain.name = "Test"
         mock_config.domain.id = "test"
@@ -328,32 +318,34 @@ def test_main_with_cody_flag():
 
 def test_main_config_file_not_found():
     """Test main function with missing config file."""
-    with patch("sys.argv", ["mcp_fess"]), patch(
-        "mcp_fess.server.load_config", side_effect=FileNotFoundError("Config not found")
-    ), patch("sys.exit") as mock_exit:
+    with (
+        patch("sys.argv", ["mcp_fess"]),
+        patch("mcp_fess.server.load_config", side_effect=FileNotFoundError("Config not found")),
+        patch("sys.exit") as mock_exit,
+    ):
         main()
         mock_exit.assert_called_once_with(1)
 
 
 def test_main_invalid_config():
     """Test main function with invalid config."""
-    with patch("sys.argv", ["mcp_fess"]), patch(
-        "mcp_fess.server.load_config", side_effect=ValueError("Invalid config")
-    ), patch("sys.exit") as mock_exit:
+    with (
+        patch("sys.argv", ["mcp_fess"]),
+        patch("mcp_fess.server.load_config", side_effect=ValueError("Invalid config")),
+        patch("sys.exit") as mock_exit,
+    ):
         main()
         mock_exit.assert_called_once_with(1)
 
 
 def test_main_keyboard_interrupt():
     """Test main function handles keyboard interrupt."""
-    with patch("sys.argv", ["mcp_fess"]), patch(
-        "mcp_fess.server.load_config"
-    ) as mock_load_config, patch(
-        "mcp_fess.server.ensure_log_directory"
-    ) as mock_log_dir, patch(
-        "mcp_fess.server.setup_logging"
-    ) as mock_setup_logging, patch(
-        "asyncio.run", side_effect=KeyboardInterrupt()
+    with (
+        patch("sys.argv", ["mcp_fess"]),
+        patch("mcp_fess.server.load_config") as mock_load_config,
+        patch("mcp_fess.server.ensure_log_directory") as mock_log_dir,
+        patch("mcp_fess.server.setup_logging") as mock_setup_logging,
+        patch("asyncio.run", side_effect=KeyboardInterrupt()),
     ):
         mock_config = MagicMock()
         mock_config.domain.name = "Test"
@@ -373,17 +365,14 @@ def test_main_keyboard_interrupt():
 
 def test_main_unexpected_error():
     """Test main function handles unexpected errors."""
-    with patch("sys.argv", ["mcp_fess"]), patch(
-        "mcp_fess.server.load_config"
-    ) as mock_load_config, patch(
-        "mcp_fess.server.ensure_log_directory"
-    ) as mock_log_dir, patch(
-        "mcp_fess.server.setup_logging"
-    ) as mock_setup_logging, patch(
-        "asyncio.run", side_effect=Exception("Unexpected error")
-    ), patch(
-        "sys.exit"
-    ) as mock_exit:
+    with (
+        patch("sys.argv", ["mcp_fess"]),
+        patch("mcp_fess.server.load_config") as mock_load_config,
+        patch("mcp_fess.server.ensure_log_directory") as mock_log_dir,
+        patch("mcp_fess.server.setup_logging") as mock_setup_logging,
+        patch("asyncio.run", side_effect=Exception("Unexpected error")),
+        patch("sys.exit") as mock_exit,
+    ):
         mock_config = MagicMock()
         mock_config.domain.name = "Test"
         mock_config.domain.id = "test"
@@ -405,15 +394,13 @@ def test_main_non_localhost_bind_rejected():
     """Test main function rejects non-localhost bind without permission."""
     test_args = ["--transport", "http"]
 
-    with patch("sys.argv", ["mcp_fess", *test_args]), patch(
-        "mcp_fess.server.load_config"
-    ) as mock_load_config, patch(
-        "mcp_fess.server.ensure_log_directory"
-    ) as mock_log_dir, patch(
-        "mcp_fess.server.setup_logging"
-    ) as mock_setup_logging, patch(
-        "sys.exit"
-    ) as mock_exit:
+    with (
+        patch("sys.argv", ["mcp_fess", *test_args]),
+        patch("mcp_fess.server.load_config") as mock_load_config,
+        patch("mcp_fess.server.ensure_log_directory") as mock_log_dir,
+        patch("mcp_fess.server.setup_logging") as mock_setup_logging,
+        patch("sys.exit") as mock_exit,
+    ):
         mock_config = MagicMock()
         mock_config.domain.name = "Test"
         mock_config.domain.id = "test"
@@ -436,15 +423,13 @@ def test_main_non_localhost_bind_allowed():
     """Test main function allows non-localhost bind with permission."""
     test_args = ["--transport", "http"]
 
-    with patch("sys.argv", ["mcp_fess", *test_args]), patch(
-        "mcp_fess.server.load_config"
-    ) as mock_load_config, patch(
-        "mcp_fess.server.ensure_log_directory"
-    ) as mock_log_dir, patch(
-        "mcp_fess.server.setup_logging"
-    ) as mock_setup_logging, patch(
-        "asyncio.run"
-    ) as mock_asyncio_run:
+    with (
+        patch("sys.argv", ["mcp_fess", *test_args]),
+        patch("mcp_fess.server.load_config") as mock_load_config,
+        patch("mcp_fess.server.ensure_log_directory") as mock_log_dir,
+        patch("mcp_fess.server.setup_logging") as mock_setup_logging,
+        patch("asyncio.run") as mock_asyncio_run,
+    ):
         mock_config = MagicMock()
         mock_config.domain.name = "Test"
         mock_config.domain.id = "test"
@@ -474,4 +459,3 @@ def test_get_domain_block_without_description(test_config):
     assert "name: Test Domain" in domain_block
     assert "description:" not in domain_block
     assert "fessLabel: test" in domain_block
-
