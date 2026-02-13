@@ -5,4 +5,3 @@ from .server import FessServer, main
 __version__ = "0.1.0"
 
 __all__ = ["FessServer", "__version__", "main"]
-

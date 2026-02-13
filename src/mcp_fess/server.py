@@ -27,10 +27,10 @@ class FessServer:
     def __init__(self, config: ServerConfig, protocol_version: str = "2025-03-26") -> None:
         self.config = config
         self.protocol_version = protocol_version
-        self.fess_client = FessClient(
-            config.fessBaseUrl, config.timeouts.fessRequestTimeoutMs
-        )
-        self.server = Server("mcp-fess")
+        self.fess_client = FessClient(config.fessBaseUrl, config.timeouts.fessRequestTimeoutMs)
+
+        server_name = f"mcp-fess-{config.domain.id}"
+        self.server = Server(server_name)
         self.domain_id = config.domain.id
         self.jobs: dict[str, dict[str, Any]] = {}
 
@@ -266,9 +266,19 @@ fessLabel: {domain.labelFilter}"""
 
     async def _handle_search(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle search tool."""
-        query = arguments["query"]
-        page_size = min(arguments.get("pageSize", 20), self.config.limits.maxPageSize)
+        query = arguments.get("query")
+        if not query:
+            raise ValueError("query parameter is required")
+
+        page_size = arguments.get("pageSize", 20)
+        if not isinstance(page_size, int) or page_size < 1:
+            raise ValueError("pageSize must be a positive integer")
+        page_size = min(page_size, self.config.limits.maxPageSize)
+
         start = arguments.get("start", 0)
+        if not isinstance(start, int) or start < 0:
+            raise ValueError("start must be a non-negative integer")
+
         sort = arguments.get("sort")
         lang = arguments.get("lang")
 
@@ -287,8 +297,14 @@ fessLabel: {domain.labelFilter}"""
 
     async def _handle_suggest(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle suggest tool."""
-        prefix = arguments["prefix"]
+        prefix = arguments.get("prefix")
+        if not prefix:
+            raise ValueError("prefix parameter is required")
+
         num = arguments.get("num", 10)
+        if not isinstance(num, int) or num < 1:
+            raise ValueError("num must be a positive integer")
+
         fields = arguments.get("fields")
         lang = arguments.get("lang")
 
@@ -335,10 +351,17 @@ fessLabel: {domain.labelFilter}"""
 
     async def _handle_job_get(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle job status query."""
-        job_id = arguments["jobId"]
+        job_id = arguments.get("jobId")
+        if not job_id:
+            raise ValueError("jobId parameter is required")
 
         if job_id not in self.jobs:
-            return [TextContent(type="text", text=f"Job not found: {job_id}")]
+            return [
+                TextContent(
+                    type="text",
+                    text=f'{{"error": "Job not found", "jobId": "{job_id}"}}',
+                )
+            ]
 
         job = self.jobs[job_id]
 
@@ -355,6 +378,33 @@ fessLabel: {domain.labelFilter}"""
                 self.server.create_initialization_options(),
             )
 
+    async def run_http(self) -> None:
+        """Run server with HTTP transport."""
+        from mcp.server.sse import sse_server
+
+        app = sse_server(
+            self.server,
+            self.server.create_initialization_options(),
+        )
+
+        import uvicorn
+
+        bind_addr = self.config.httpTransport.bindAddress
+        port = self.config.httpTransport.port
+        if port == 0:
+            port = 3000
+
+        logger.info(f"Starting HTTP server on {bind_addr}:{port}{self.config.httpTransport.path}")
+
+        config = uvicorn.Config(
+            app,
+            host=bind_addr,
+            port=port,
+            log_level="warning",
+        )
+        server = uvicorn.Server(config)
+        await server.serve()
+
     async def cleanup(self) -> None:
         """Clean up resources."""
         await self.fess_client.close()
@@ -370,9 +420,7 @@ def main() -> None:
         help="Transport mode (default: stdio)",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
-    parser.add_argument(
-        "--cody", action="store_true", help="Use MCP protocol version 2024-11-05"
-    )
+    parser.add_argument("--cody", action="store_true", help="Use MCP protocol version 2024-11-05")
 
     args = parser.parse_args()
 
@@ -403,8 +451,7 @@ def main() -> None:
         if args.transport == "stdio":
             asyncio.run(server.run_stdio())
         else:
-            logger.error("HTTP transport not yet implemented")
-            sys.exit(1)
+            asyncio.run(server.run_http())
 
     except FileNotFoundError as e:
         print(f"Configuration error: {e}", file=sys.stderr)
@@ -421,4 +468,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -146,9 +146,7 @@ class FessClient:
             logger.error(f"Fess health check error: {e}")
             raise
 
-    async def fetch_document_content(
-        self, url: str, config: ContentFetchConfig
-    ) -> tuple[str, str]:
+    async def fetch_document_content(self, url: str, config: ContentFetchConfig) -> tuple[str, str]:
         """
         Fetch full document content from URL.
 
@@ -165,7 +163,10 @@ class FessClient:
         if (
             not config.allowPrivateNetworkTargets
             and self._is_private_network(parsed.hostname or "")
-            and (not config.allowedHostAllowlist or parsed.hostname not in config.allowedHostAllowlist)
+            and (
+                not config.allowedHostAllowlist
+                or parsed.hostname not in config.allowedHostAllowlist
+            )
         ):
             raise ValueError(f"Access to private network target {parsed.hostname} not allowed")
 
