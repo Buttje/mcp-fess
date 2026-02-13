@@ -1,0 +1,42 @@
+{
+  "fessBaseUrl": "http://localhost:8080",
+  "domain": {
+    "id": "my_domain",
+    "name": "My Knowledge Domain",
+    "description": "Description of the knowledge domain",
+    "labelFilter": "my_label"
+  },
+  "httpTransport": {
+    "bindAddress": "127.0.0.1",
+    "port": 3000,
+    "path": "/mcp",
+    "enableSse": true
+  },
+  "timeouts": {
+    "fessRequestTimeoutMs": 30000,
+    "longRunningThresholdMs": 2000
+  },
+  "limits": {
+    "maxPageSize": 100,
+    "maxChunkBytes": 262144,
+    "maxInFlightRequests": 32
+  },
+  "logging": {
+    "level": "info",
+    "retainDays": 7
+  },
+  "security": {
+    "httpAuthToken": null,
+    "allowNonLocalhostBind": false
+  },
+  "contentFetch": {
+    "enabled": true,
+    "maxBytes": 5242880,
+    "timeoutMs": 20000,
+    "allowedSchemes": ["http", "https"],
+    "allowPrivateNetworkTargets": false,
+    "allowedHostAllowlist": null,
+    "userAgent": "MCP-Fess/1.0",
+    "enablePdf": false
+  }
+}
