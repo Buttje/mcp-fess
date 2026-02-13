@@ -16,7 +16,9 @@ class TestElapsedTimeFormatter:
     def test_format_with_elapsed_time(self):
         """Test formatting with elapsed time."""
         start_time = datetime.now() - timedelta(hours=2, minutes=30, seconds=45)
-        formatter = ElapsedTimeFormatter(start_time, fmt="[%(elapsed_time)s] %(levelname)s: %(message)s")
+        formatter = ElapsedTimeFormatter(
+            start_time, fmt="[%(elapsed_time)s] %(levelname)s: %(message)s"
+        )
 
         record = logging.LogRecord(
             name="test",
@@ -204,7 +206,7 @@ class TestSetupLogging:
         with tempfile.TemporaryDirectory() as tmpdir:
             log_dir = Path(tmpdir)
 
-            with patch('mcp_fess.logging_utils.datetime') as mock_datetime:
+            with patch("mcp_fess.logging_utils.datetime") as mock_datetime:
                 mock_now = datetime(2024, 1, 15, 14, 30, 45)
                 mock_datetime.now.return_value = mock_now
 
@@ -229,7 +231,7 @@ class TestSetupLogging:
             # Find file handler
             file_handler = None
             for handler in logger.handlers:
-                if hasattr(handler, 'stream') and handler.stream == debug_file_handle:
+                if hasattr(handler, "stream") and handler.stream == debug_file_handle:
                     file_handler = handler
                     break
 

@@ -7,19 +7,14 @@ import logging
 import sys
 from typing import Any
 
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-from mcp.types import (
-    Resource,
-    TextContent,
-    Tool,
-)
+from fastmcp import FastMCP
 
 from .config import ServerConfig, ensure_log_directory, load_config
 from .fess_client import FessClient
 from .logging_utils import setup_logging
 
 logger = logging.getLogger("mcp_fess")
+
 
 class FessServer:
     """MCP server implementation for Fess."""
@@ -30,11 +25,12 @@ class FessServer:
         self.fess_client = FessClient(config.fessBaseUrl, config.timeouts.fessRequestTimeoutMs)
 
         server_name = f"mcp-fess-{config.domain.id}"
-        self.server = Server(server_name)
+        self.mcp = FastMCP(name=server_name)
         self.domain_id = config.domain.id
         self.jobs: dict[str, dict[str, Any]] = {}
 
-        self._setup_handlers()
+        self._setup_tools()
+        self._setup_resources()
 
     def _get_domain_block(self) -> str:
         """Generate the Knowledge Domain block for descriptions."""
@@ -46,188 +42,81 @@ name: {domain.name}
 {desc}
 fessLabel: {domain.labelFilter}"""
 
-    def _setup_handlers(self) -> None:
-        """Set up MCP request handlers."""
+    def _setup_tools(self) -> None:
+        """Set up MCP tools using FastMCP decorators."""
 
-        @self.server.list_tools()
-        async def list_tools() -> list[Tool]:
-            """List available tools."""
-            domain_block = self._get_domain_block()
-            tools = []
-
-            tools.append(
-                Tool(
-                    name=f"fess_{self.domain_id}_search",
-                    description=f"Search the knowledge domain for documents matching a query.\n\n{domain_block}",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "query": {"type": "string", "description": "Search term"},
-                            "pageSize": {
-                                "type": "integer",
-                                "description": "Number of results (default 20, max 100)",
-                                "default": 20,
-                            },
-                            "start": {
-                                "type": "integer",
-                                "description": "Starting index (default 0)",
-                                "default": 0,
-                            },
-                            "sort": {"type": "string", "description": "Sort order"},
-                            "lang": {"type": "string", "description": "Search language"},
-                            "includeFields": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "Fields to include in results",
-                            },
-                        },
-                        "required": ["query"],
-                    },
-                )
+        @self.mcp.tool(name=f"fess_{self.domain_id}_search")
+        async def search(
+            query: str,
+            page_size: int = 20,
+            start: int = 0,
+            sort: str | None = None,
+            lang: str | None = None,
+            include_fields: list[str] | None = None,
+        ) -> str:
+            """Search the knowledge domain for documents matching a query."""
+            return await self._handle_search(
+                {
+                    "query": query,
+                    "pageSize": page_size,
+                    "start": start,
+                    "sort": sort,
+                    "lang": lang,
+                    "includeFields": include_fields,
+                }
             )
 
-            tools.append(
-                Tool(
-                    name=f"fess_{self.domain_id}_suggest",
-                    description=f"Suggest related terms for a query in the knowledge domain.\n\n{domain_block}",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "prefix": {"type": "string", "description": "Search prefix"},
-                            "num": {
-                                "type": "integer",
-                                "description": "Number of suggestions (default 10)",
-                                "default": 10,
-                            },
-                            "fields": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "Fields to search in",
-                            },
-                            "lang": {"type": "string", "description": "Language"},
-                        },
-                        "required": ["prefix"],
-                    },
-                )
+        @self.mcp.tool(name=f"fess_{self.domain_id}_suggest")
+        async def suggest(
+            prefix: str,
+            num: int = 10,
+            fields: list[str] | None = None,
+            lang: str | None = None,
+        ) -> str:
+            """Suggest related terms for a query in the knowledge domain."""
+            return await self._handle_suggest(
+                {
+                    "prefix": prefix,
+                    "num": num,
+                    "fields": fields,
+                    "lang": lang,
+                }
             )
 
-            tools.append(
-                Tool(
-                    name=f"fess_{self.domain_id}_popular_words",
-                    description=f"Retrieve popular words in the knowledge domain.\n\n{domain_block}",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "seed": {"type": "integer", "description": "Random seed"},
-                            "field": {"type": "string", "description": "Field name"},
-                        },
-                    },
-                )
+        @self.mcp.tool(name=f"fess_{self.domain_id}_popular_words")
+        async def popular_words(
+            seed: int | None = None,
+            field: str | None = None,
+        ) -> str:
+            """Retrieve popular words in the knowledge domain."""
+            return await self._handle_popular_words(
+                {
+                    "seed": seed,
+                    "field": field,
+                }
             )
 
-            tools.append(
-                Tool(
-                    name=f"fess_{self.domain_id}_list_labels",
-                    description=f"List all labels configured in the underlying Fess server.\n\n{domain_block}",
-                    inputSchema={"type": "object", "properties": {}},
-                )
-            )
+        @self.mcp.tool(name=f"fess_{self.domain_id}_list_labels")
+        async def list_labels() -> str:
+            """List all labels configured in the underlying Fess server."""
+            return await self._handle_list_labels()
 
-            tools.append(
-                Tool(
-                    name=f"fess_{self.domain_id}_health",
-                    description=f"Check the health status of the underlying Fess server.\n\n{domain_block}",
-                    inputSchema={"type": "object", "properties": {}},
-                )
-            )
+        @self.mcp.tool(name=f"fess_{self.domain_id}_health")
+        async def health() -> str:
+            """Check the health status of the underlying Fess server."""
+            return await self._handle_health()
 
-            tools.append(
-                Tool(
-                    name=f"fess_{self.domain_id}_job_get",
-                    description=f"Retrieve progress information for a long-running operation.\n\n{domain_block}",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "jobId": {"type": "string", "description": "Job ID"},
-                        },
-                        "required": ["jobId"],
-                    },
-                )
-            )
+        @self.mcp.tool(name=f"fess_{self.domain_id}_job_get")
+        async def job_get(job_id: str) -> str:
+            """Retrieve progress information for a long-running operation."""
+            return await self._handle_job_get({"jobId": job_id})
 
-            return tools
+    def _setup_resources(self) -> None:
+        """Set up MCP resources using FastMCP decorators."""
 
-        @self.server.call_tool()
-        async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-            """Handle tool calls."""
-            logger.info(f"Tool called: {name} with arguments: {arguments}")
-
-            try:
-                if name == f"fess_{self.domain_id}_search":
-                    return await self._handle_search(arguments)
-                elif name == f"fess_{self.domain_id}_suggest":
-                    return await self._handle_suggest(arguments)
-                elif name == f"fess_{self.domain_id}_popular_words":
-                    return await self._handle_popular_words(arguments)
-                elif name == f"fess_{self.domain_id}_list_labels":
-                    return await self._handle_list_labels()
-                elif name == f"fess_{self.domain_id}_health":
-                    return await self._handle_health()
-                elif name == f"fess_{self.domain_id}_job_get":
-                    return await self._handle_job_get(arguments)
-                else:
-                    raise ValueError(f"Unknown tool: {name}")
-            except Exception as e:
-                logger.error(f"Tool execution error: {e}", exc_info=True)
-                return [TextContent(type="text", text=f"Error: {e!s}")]
-
-        @self.server.list_resources()
-        async def list_resources() -> list[Resource]:
-            """List available resources."""
-            domain_block = self._get_domain_block()
-            try:
-                result = await self.fess_client.search(
-                    query="*",
-                    label_filter=self.config.domain.labelFilter,
-                    start=0,
-                    num=self.config.limits.maxPageSize,
-                )
-
-                resources = []
-                for doc in result.get("data", []):
-                    doc_id = doc.get("doc_id", "")
-                    title = doc.get("title", "Untitled")
-                    url = doc.get("url", "")
-
-                    resources.append(
-                        Resource(
-                            uri=f"fess://{self.domain_id}/doc/{doc_id}",
-                            name=title,
-                            description=f"{domain_block}\n\nDocument: {title}\nURL: {url}",
-                            mimeType="text/plain",
-                        )
-                    )
-
-                return resources
-            except Exception as e:
-                logger.error(f"Failed to list resources: {e}")
-                return []
-
-        @self.server.read_resource()
-        async def read_resource(uri: str) -> str:
-            """Read resource content."""
-            logger.info(f"Reading resource: {uri}")
-
-            if not uri.startswith(f"fess://{self.domain_id}/doc/"):
-                raise ValueError(f"Invalid resource URI: {uri}")
-
-            parts = uri.split("/")
-            if len(parts) < 5:
-                raise ValueError(f"Invalid resource URI format: {uri}")
-
-            doc_id = parts[4]
-            is_content = len(parts) > 5 and parts[5] == "content"
-
+        @self.mcp.resource(f"fess://{self.domain_id}/doc/{{doc_id}}")
+        async def read_doc(doc_id: str) -> str:
+            """Document metadata."""
             try:
                 result = await self.fess_client.search(
                     query=f"doc_id:{doc_id}",
@@ -240,30 +129,46 @@ fessLabel: {domain.labelFilter}"""
                     raise ValueError(f"Document not found: {doc_id}")
 
                 doc = docs[0]
-
-                if is_content:
-                    url = doc.get("url", "")
-                    if not url:
-                        raise ValueError("Document has no URL")
-
-                    content, _ = await self.fess_client.fetch_document_content(
-                        url, self.config.contentFetch
-                    )
-
-                    max_chunk = self.config.limits.maxChunkBytes
-                    if len(content) <= max_chunk:
-                        return content
-                    else:
-                        return content[:max_chunk]
-                else:
-
-                    return json.dumps(doc, indent=2)
+                return json.dumps(doc, indent=2)
 
             except Exception as e:
                 logger.error(f"Failed to read resource: {e}")
                 raise
 
-    async def _handle_search(self, arguments: dict[str, Any]) -> list[TextContent]:
+        @self.mcp.resource(f"fess://{self.domain_id}/doc/{{doc_id}}/content")
+        async def read_doc_content(doc_id: str) -> str:
+            """Full document content."""
+            try:
+                result = await self.fess_client.search(
+                    query=f"doc_id:{doc_id}",
+                    label_filter=self.config.domain.labelFilter,
+                    num=1,
+                )
+
+                docs = result.get("data", [])
+                if not docs:
+                    raise ValueError(f"Document not found: {doc_id}")
+
+                doc = docs[0]
+                url = doc.get("url", "")
+                if not url:
+                    raise ValueError("Document has no URL")
+
+                content, _ = await self.fess_client.fetch_document_content(
+                    url, self.config.contentFetch
+                )
+
+                max_chunk = self.config.limits.maxChunkBytes
+                if len(content) <= max_chunk:
+                    return content
+                else:
+                    return content[:max_chunk]
+
+            except Exception as e:
+                logger.error(f"Failed to read resource: {e}")
+                raise
+
+    async def _handle_search(self, arguments: dict[str, Any]) -> str:
         """Handle search tool."""
         query = arguments.get("query")
         if not query:
@@ -290,9 +195,9 @@ fessLabel: {domain.labelFilter}"""
             lang=lang,
         )
 
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+        return json.dumps(result, indent=2)
 
-    async def _handle_suggest(self, arguments: dict[str, Any]) -> list[TextContent]:
+    async def _handle_suggest(self, arguments: dict[str, Any]) -> str:
         """Handle suggest tool."""
         prefix = arguments.get("prefix")
         if not prefix:
@@ -313,9 +218,9 @@ fessLabel: {domain.labelFilter}"""
             lang=lang,
         )
 
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+        return json.dumps(result, indent=2)
 
-    async def _handle_popular_words(self, arguments: dict[str, Any]) -> list[TextContent]:
+    async def _handle_popular_words(self, arguments: dict[str, Any]) -> str:
         """Handle popular words tool."""
         seed = arguments.get("seed")
         field = arguments.get("field")
@@ -324,58 +229,39 @@ fessLabel: {domain.labelFilter}"""
             label=self.config.domain.labelFilter, seed=seed, field=field
         )
 
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+        return json.dumps(result, indent=2)
 
-    async def _handle_list_labels(self) -> list[TextContent]:
+    async def _handle_list_labels(self) -> str:
         """Handle list labels tool."""
         result = await self.fess_client.list_labels()
 
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+        return json.dumps(result, indent=2)
 
-    async def _handle_health(self) -> list[TextContent]:
+    async def _handle_health(self) -> str:
         """Handle health check tool."""
         result = await self.fess_client.health()
 
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+        return json.dumps(result, indent=2)
 
-    async def _handle_job_get(self, arguments: dict[str, Any]) -> list[TextContent]:
+    async def _handle_job_get(self, arguments: dict[str, Any]) -> str:
         """Handle job status query."""
         job_id = arguments.get("jobId")
         if not job_id:
             raise ValueError("jobId parameter is required")
 
         if job_id not in self.jobs:
-            return [
-                TextContent(
-                    type="text",
-                    text=f'{{"error": "Job not found", "jobId": "{job_id}"}}',
-                )
-            ]
+            return f'{{"error": "Job not found", "jobId": "{job_id}"}}'
 
         job = self.jobs[job_id]
 
-        return [TextContent(type="text", text=json.dumps(job, indent=2))]
+        return json.dumps(job, indent=2)
 
     async def run_stdio(self) -> None:
         """Run server with stdio transport."""
-        async with stdio_server() as (read_stream, write_stream):
-            await self.server.run(
-                read_stream,
-                write_stream,
-                self.server.create_initialization_options(),
-            )
+        await self.mcp.run_stdio_async()
 
     async def run_http(self) -> None:
         """Run server with HTTP transport."""
-        from mcp.server.sse import sse_server
-
-        app = sse_server(
-            self.server,
-            self.server.create_initialization_options(),
-        )
-
-        import uvicorn
-
         bind_addr = self.config.httpTransport.bindAddress
         port = self.config.httpTransport.port
         if port == 0:
@@ -383,18 +269,12 @@ fessLabel: {domain.labelFilter}"""
 
         logger.info(f"Starting HTTP server on {bind_addr}:{port}{self.config.httpTransport.path}")
 
-        config = uvicorn.Config(
-            app,
-            host=bind_addr,
-            port=port,
-            log_level="warning",
-        )
-        server = uvicorn.Server(config)
-        await server.serve()
+        await self.mcp.run_http_async(host=bind_addr, port=port)
 
     async def cleanup(self) -> None:
         """Clean up resources."""
         await self.fess_client.close()
+
 
 def main() -> None:
     """Main entry point for the server."""
@@ -434,10 +314,16 @@ def main() -> None:
         protocol_version = "2024-11-05" if args.cody else "2025-03-26"
         server = FessServer(config, protocol_version)
 
-        if args.transport == "stdio":
-            asyncio.run(server.run_stdio())
-        else:
-            asyncio.run(server.run_http())
+        async def run_server() -> None:
+            try:
+                if args.transport == "stdio":
+                    await server.run_stdio()
+                else:
+                    await server.run_http()
+            finally:
+                await server.cleanup()
+
+        asyncio.run(run_server())
 
     except FileNotFoundError as e:
         print(f"Configuration error: {e}", file=sys.stderr)
@@ -450,6 +336,7 @@ def main() -> None:
     except Exception as e:
         logger.exception(f"Fatal error: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

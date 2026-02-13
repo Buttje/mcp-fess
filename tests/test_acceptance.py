@@ -146,7 +146,7 @@ async def test_at_mcp_001_initialize_flow(valid_config):
     assert server.protocol_version == "2025-03-26"
 
     # Verify server was created
-    assert server.server is not None
+    assert server.mcp is not None
     assert server.domain_id == "finance"
 
     await server.cleanup()
@@ -331,9 +331,7 @@ async def test_at_tool_007_health(valid_config):
     """
     server = FessServer(valid_config)
 
-    server.fess_client.health = AsyncMock(
-        return_value={"status": "green", "timed_out": False}
-    )
+    server.fess_client.health = AsyncMock(return_value={"status": "green", "timed_out": False})
 
     result = await server._handle_health()
 
@@ -536,9 +534,7 @@ async def test_at_sec_002_private_network_blocked(valid_config):
 
     Private network targets should be blocked by default.
     """
-    client = FessClient(
-        valid_config.fessBaseUrl, valid_config.timeouts.fessRequestTimeoutMs
-    )
+    client = FessClient(valid_config.fessBaseUrl, valid_config.timeouts.fessRequestTimeoutMs)
 
     # Test private IP detection
     assert client._is_private_network("192.168.1.1")
@@ -592,15 +588,11 @@ async def test_content_fetch_disabled(valid_config_dict):
 @pytest.mark.asyncio
 async def test_invalid_uri_scheme(valid_config):
     """Test invalid URI scheme rejection."""
-    client = FessClient(
-        valid_config.fessBaseUrl, valid_config.timeouts.fessRequestTimeoutMs
-    )
+    client = FessClient(valid_config.fessBaseUrl, valid_config.timeouts.fessRequestTimeoutMs)
 
     # FTP is not in allowed schemes by default
     with pytest.raises(ValueError) as exc_info:
-        await client.fetch_document_content(
-            "ftp://example.com/doc", valid_config.contentFetch
-        )
+        await client.fetch_document_content("ftp://example.com/doc", valid_config.contentFetch)
 
     error_msg = str(exc_info.value).lower()
     assert "scheme" in error_msg or "ftp" in error_msg
