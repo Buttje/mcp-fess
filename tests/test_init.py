@@ -1,7 +1,8 @@
 """Tests for the MCP Fess package."""
 
-import mcp_fess
 from fastmcp import FastMCP
+
+import mcp_fess
 
 
 def test_version():
