@@ -87,8 +87,7 @@ class ServerConfig(BaseModel):
             raise ValueError("fessBaseUrl cannot be empty")
         return v.rstrip("/")
 
-    class Config:
-        populate_by_name = True
+    model_config = {"populate_by_name": True}
 
 
 def load_config() -> ServerConfig:
