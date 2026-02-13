@@ -1,6 +1,7 @@
 """MCP Server for Fess."""
 
 import argparse
+import asyncio
 import json
 import logging
 import sys
@@ -321,8 +322,6 @@ def main() -> None:
                     await server.run_http()
             finally:
                 await server.cleanup()
-
-        import asyncio
 
         asyncio.run(run_server())
 
