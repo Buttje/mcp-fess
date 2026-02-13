@@ -84,8 +84,8 @@ async def test_handle_search_success(fess_server):
 
     with patch.object(fess_server.fess_client, "search", new=AsyncMock(return_value=mock_result)):
         result = await fess_server._handle_search({"query": "test"})
-        assert len(result) == 1
-        assert "Test" in result[0].text
+        assert isinstance(result, str)
+        assert "Test" in result
 
 
 @pytest.mark.asyncio
@@ -111,8 +111,8 @@ async def test_handle_suggest_success(fess_server):
         fess_server.fess_client, "suggest", new=AsyncMock(return_value=mock_result)
     ):
         result = await fess_server._handle_suggest({"prefix": "test"})
-        assert len(result) == 1
-        assert "test1" in result[0].text
+        assert isinstance(result, str)
+        assert "test1" in result
 
 
 @pytest.mark.asyncio
@@ -124,8 +124,8 @@ async def test_handle_popular_words_success(fess_server):
         fess_server.fess_client, "popular_words", new=AsyncMock(return_value=mock_result)
     ):
         result = await fess_server._handle_popular_words({})
-        assert len(result) == 1
-        assert "word1" in result[0].text
+        assert isinstance(result, str)
+        assert "word1" in result
 
 
 @pytest.mark.asyncio
@@ -137,8 +137,8 @@ async def test_handle_list_labels_success(fess_server):
         fess_server.fess_client, "list_labels", new=AsyncMock(return_value=mock_result)
     ):
         result = await fess_server._handle_list_labels()
-        assert len(result) == 1
-        assert "test" in result[0].text
+        assert isinstance(result, str)
+        assert "test" in result
 
 
 @pytest.mark.asyncio
@@ -148,8 +148,8 @@ async def test_handle_health_success(fess_server):
 
     with patch.object(fess_server.fess_client, "health", new=AsyncMock(return_value=mock_result)):
         result = await fess_server._handle_health()
-        assert len(result) == 1
-        assert "green" in result[0].text
+        assert isinstance(result, str)
+        assert "green" in result
 
 
 @pytest.mark.asyncio
@@ -163,8 +163,8 @@ async def test_handle_job_get_missing_job_id(fess_server):
 async def test_handle_job_get_not_found(fess_server):
     """Test job get handler with non-existent job."""
     result = await fess_server._handle_job_get({"jobId": "nonexistent"})
-    assert len(result) == 1
-    assert "Job not found" in result[0].text
+    assert isinstance(result, str)
+    assert "Job not found" in result
 
 
 @pytest.mark.asyncio
@@ -177,9 +177,9 @@ async def test_handle_job_get_success(fess_server):
     }
 
     result = await fess_server._handle_job_get({"jobId": "test_job"})
-    assert len(result) == 1
-    assert "done" in result[0].text
-    assert "100" in result[0].text
+    assert isinstance(result, str)
+    assert "done" in result
+    assert "100" in result
 
 
 @pytest.mark.asyncio
