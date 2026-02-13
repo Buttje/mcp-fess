@@ -1,7 +1,8 @@
 """Tests for Fess client module."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from mcp_fess.config import ContentFetchConfig
 from mcp_fess.fess_client import FessClient
@@ -160,9 +161,11 @@ async def test_search_http_error(fess_client):
         response=MagicMock(status_code=404),
     )
 
-    with patch.object(fess_client.client, "get", new=AsyncMock(side_effect=mock_error)):
-        with pytest.raises(httpx.HTTPError):
-            await fess_client.search("test query")
+    with (
+        patch.object(fess_client.client, "get", new=AsyncMock(side_effect=mock_error)),
+        pytest.raises(httpx.HTTPError),
+    ):
+        await fess_client.search("test query")
 
 
 @pytest.mark.asyncio
@@ -204,7 +207,7 @@ async def test_search_minimal_params(fess_client):
     mock_response.raise_for_status = MagicMock()
 
     with patch.object(fess_client.client, "get", new=AsyncMock(return_value=mock_response)) as mock_get:
-        result = await fess_client.search("test")
+        await fess_client.search("test")
         call_args = mock_get.call_args
         params = call_args.kwargs["params"]
         assert params["q"] == "test"
@@ -225,9 +228,11 @@ async def test_suggest_http_error(fess_client):
         response=MagicMock(status_code=500),
     )
 
-    with patch.object(fess_client.client, "get", new=AsyncMock(side_effect=mock_error)):
-        with pytest.raises(httpx.HTTPError):
-            await fess_client.suggest("test")
+    with (
+        patch.object(fess_client.client, "get", new=AsyncMock(side_effect=mock_error)),
+        pytest.raises(httpx.HTTPError),
+    ):
+        await fess_client.suggest("test")
 
 
 @pytest.mark.asyncio
@@ -263,9 +268,11 @@ async def test_popular_words_http_error(fess_client):
         response=MagicMock(status_code=503),
     )
 
-    with patch.object(fess_client.client, "get", new=AsyncMock(side_effect=mock_error)):
-        with pytest.raises(httpx.HTTPError):
-            await fess_client.popular_words()
+    with (
+        patch.object(fess_client.client, "get", new=AsyncMock(side_effect=mock_error)),
+        pytest.raises(httpx.HTTPError),
+    ):
+        await fess_client.popular_words()
 
 
 @pytest.mark.asyncio
@@ -293,7 +300,7 @@ async def test_popular_words_no_params(fess_client):
     mock_response.raise_for_status = MagicMock()
 
     with patch.object(fess_client.client, "get", new=AsyncMock(return_value=mock_response)) as mock_get:
-        result = await fess_client.popular_words()
+        await fess_client.popular_words()
         call_args = mock_get.call_args
         params = call_args.kwargs["params"]
         assert params == {}
@@ -311,9 +318,11 @@ async def test_list_labels_http_error(fess_client):
         response=MagicMock(status_code=401),
     )
 
-    with patch.object(fess_client.client, "get", new=AsyncMock(side_effect=mock_error)):
-        with pytest.raises(httpx.HTTPError):
-            await fess_client.list_labels()
+    with (
+        patch.object(fess_client.client, "get", new=AsyncMock(side_effect=mock_error)),
+        pytest.raises(httpx.HTTPError),
+    ):
+        await fess_client.list_labels()
 
 
 # Additional error handling tests for health
@@ -328,9 +337,11 @@ async def test_health_http_error(fess_client):
         response=MagicMock(status_code=500),
     )
 
-    with patch.object(fess_client.client, "get", new=AsyncMock(side_effect=mock_error)):
-        with pytest.raises(httpx.HTTPError):
-            await fess_client.health()
+    with (
+        patch.object(fess_client.client, "get", new=AsyncMock(side_effect=mock_error)),
+        pytest.raises(httpx.HTTPError),
+    ):
+        await fess_client.health()
 
 
 # Additional tests for _is_private_network
@@ -434,11 +445,11 @@ endstream
 endobj
 xref
 0 5
-0000000000 65535 f 
-0000000009 00000 n 
-0000000058 00000 n 
-0000000115 00000 n 
-0000000317 00000 n 
+0000000000 65535 f
+0000000009 00000 n
+0000000058 00000 n
+0000000115 00000 n
+0000000317 00000 n
 trailer
 <<
 /Size 5

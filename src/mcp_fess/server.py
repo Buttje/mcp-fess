@@ -21,7 +21,6 @@ from .logging_utils import setup_logging
 
 logger = logging.getLogger("mcp_fess")
 
-
 class FessServer:
     """MCP server implementation for Fess."""
 
@@ -258,7 +257,6 @@ fessLabel: {domain.labelFilter}"""
                         return content[:max_chunk]
                 else:
 
-
                     return json.dumps(doc, indent=2)
 
             except Exception as e:
@@ -292,8 +290,6 @@ fessLabel: {domain.labelFilter}"""
             lang=lang,
         )
 
-
-
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
     async def _handle_suggest(self, arguments: dict[str, Any]) -> list[TextContent]:
@@ -317,8 +313,6 @@ fessLabel: {domain.labelFilter}"""
             lang=lang,
         )
 
-
-
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
     async def _handle_popular_words(self, arguments: dict[str, Any]) -> list[TextContent]:
@@ -330,23 +324,17 @@ fessLabel: {domain.labelFilter}"""
             label=self.config.domain.labelFilter, seed=seed, field=field
         )
 
-
-
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
     async def _handle_list_labels(self) -> list[TextContent]:
         """Handle list labels tool."""
         result = await self.fess_client.list_labels()
 
-
-
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
     async def _handle_health(self) -> list[TextContent]:
         """Handle health check tool."""
         result = await self.fess_client.health()
-
-
 
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
@@ -365,8 +353,6 @@ fessLabel: {domain.labelFilter}"""
             ]
 
         job = self.jobs[job_id]
-
-
 
         return [TextContent(type="text", text=json.dumps(job, indent=2))]
 
@@ -409,7 +395,6 @@ fessLabel: {domain.labelFilter}"""
     async def cleanup(self) -> None:
         """Clean up resources."""
         await self.fess_client.close()
-
 
 def main() -> None:
     """Main entry point for the server."""
@@ -465,7 +450,6 @@ def main() -> None:
     except Exception as e:
         logger.exception(f"Fatal error: {e}")
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()

@@ -5,17 +5,13 @@ Acceptance Test Specification PDF. Tests are adapted to work with
 the actual implementation while maintaining compliance with the specification.
 """
 
-import json
-import os
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
-from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
 from mcp_fess.config import ServerConfig, ensure_log_directory
-from mcp_fess.server import FessServer
 from mcp_fess.fess_client import FessClient
+from mcp_fess.server import FessServer
 
 
 @pytest.fixture

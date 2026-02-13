@@ -1,9 +1,10 @@
 """Tests for the server module."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from mcp_fess.config import ServerConfig, DomainConfig
+import pytest
+
+from mcp_fess.config import DomainConfig, ServerConfig
 from mcp_fess.server import FessServer, main
 
 
@@ -207,7 +208,7 @@ def test_main_with_stdio():
     """Test main function with stdio transport."""
     test_args = ["--transport", "stdio"]
 
-    with patch("sys.argv", ["mcp_fess"] + test_args), patch(
+    with patch("sys.argv", ["mcp_fess", *test_args]), patch(
         "mcp_fess.server.load_config"
     ) as mock_load_config, patch(
         "mcp_fess.server.ensure_log_directory"
@@ -237,7 +238,7 @@ def test_main_with_http():
     """Test main function with http transport."""
     test_args = ["--transport", "http"]
 
-    with patch("sys.argv", ["mcp_fess"] + test_args), patch(
+    with patch("sys.argv", ["mcp_fess", *test_args]), patch(
         "mcp_fess.server.load_config"
     ) as mock_load_config, patch(
         "mcp_fess.server.ensure_log_directory"
@@ -267,7 +268,7 @@ def test_main_with_debug():
     """Test main function with debug flag."""
     test_args = ["--debug"]
 
-    with patch("sys.argv", ["mcp_fess"] + test_args), patch(
+    with patch("sys.argv", ["mcp_fess", *test_args]), patch(
         "mcp_fess.server.load_config"
     ) as mock_load_config, patch(
         "mcp_fess.server.ensure_log_directory"
@@ -275,7 +276,7 @@ def test_main_with_debug():
         "mcp_fess.server.setup_logging"
     ) as mock_setup_logging, patch(
         "asyncio.run"
-    ) as mock_asyncio_run:
+    ):
         mock_config = MagicMock()
         mock_config.domain.name = "Test"
         mock_config.domain.id = "test"
@@ -299,7 +300,7 @@ def test_main_with_cody_flag():
     """Test main function with cody flag."""
     test_args = ["--cody"]
 
-    with patch("sys.argv", ["mcp_fess"] + test_args), patch(
+    with patch("sys.argv", ["mcp_fess", *test_args]), patch(
         "mcp_fess.server.load_config"
     ) as mock_load_config, patch(
         "mcp_fess.server.ensure_log_directory"
@@ -404,7 +405,7 @@ def test_main_non_localhost_bind_rejected():
     """Test main function rejects non-localhost bind without permission."""
     test_args = ["--transport", "http"]
 
-    with patch("sys.argv", ["mcp_fess"] + test_args), patch(
+    with patch("sys.argv", ["mcp_fess", *test_args]), patch(
         "mcp_fess.server.load_config"
     ) as mock_load_config, patch(
         "mcp_fess.server.ensure_log_directory"
@@ -435,7 +436,7 @@ def test_main_non_localhost_bind_allowed():
     """Test main function allows non-localhost bind with permission."""
     test_args = ["--transport", "http"]
 
-    with patch("sys.argv", ["mcp_fess"] + test_args), patch(
+    with patch("sys.argv", ["mcp_fess", *test_args]), patch(
         "mcp_fess.server.load_config"
     ) as mock_load_config, patch(
         "mcp_fess.server.ensure_log_directory"
