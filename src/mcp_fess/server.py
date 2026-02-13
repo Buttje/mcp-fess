@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import json
 import logging
 import sys
 from typing import Any
@@ -256,7 +257,7 @@ fessLabel: {domain.labelFilter}"""
                     else:
                         return content[:max_chunk]
                 else:
-                    import json
+
 
                     return json.dumps(doc, indent=2)
 
@@ -291,7 +292,7 @@ fessLabel: {domain.labelFilter}"""
             lang=lang,
         )
 
-        import json
+
 
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
@@ -316,7 +317,7 @@ fessLabel: {domain.labelFilter}"""
             lang=lang,
         )
 
-        import json
+
 
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
@@ -329,7 +330,7 @@ fessLabel: {domain.labelFilter}"""
             label=self.config.domain.labelFilter, seed=seed, field=field
         )
 
-        import json
+
 
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
@@ -337,7 +338,7 @@ fessLabel: {domain.labelFilter}"""
         """Handle list labels tool."""
         result = await self.fess_client.list_labels()
 
-        import json
+
 
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
@@ -345,7 +346,7 @@ fessLabel: {domain.labelFilter}"""
         """Handle health check tool."""
         result = await self.fess_client.health()
 
-        import json
+
 
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
@@ -365,7 +366,7 @@ fessLabel: {domain.labelFilter}"""
 
         job = self.jobs[job_id]
 
-        import json
+
 
         return [TextContent(type="text", text=json.dumps(job, indent=2))]
 

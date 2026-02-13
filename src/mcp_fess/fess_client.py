@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+from io import BytesIO
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -241,8 +242,6 @@ class FessClient:
     def _extract_text_from_pdf(self, content: bytes) -> str:
         """Extract text from PDF content."""
         try:
-            from io import BytesIO
-
             pdf_file = BytesIO(content)
             reader = PdfReader(pdf_file)
 
