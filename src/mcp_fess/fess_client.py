@@ -1,0 +1,257 @@
+"""Fess API client."""
+
+import hashlib
+import logging
+from typing import Any
+from urllib.parse import urljoin, urlparse
+
+import httpx
+from bs4 import BeautifulSoup
+from PyPDF2 import PdfReader
+
+from .config import ContentFetchConfig
+
+logger = logging.getLogger("mcp_fess")
+
+
+class FessClient:
+    """Client for interacting with Fess REST API."""
+
+    def __init__(self, base_url: str, timeout_ms: int = 30000) -> None:
+        self.base_url = base_url
+        self.timeout = timeout_ms / 1000.0
+        self.client = httpx.AsyncClient(timeout=self.timeout)
+
+    async def close(self) -> None:
+        """Close the HTTP client."""
+        await self.client.aclose()
+
+    async def search(
+        self,
+        query: str,
+        label_filter: str | None = None,
+        start: int = 0,
+        num: int = 20,
+        sort: str | None = None,
+        lang: str | None = None,
+        fields: list[str] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Search documents in Fess."""
+        params: dict[str, Any] = {"q": query, "start": start, "num": num}
+
+        if label_filter:
+            params["fields.label"] = label_filter
+        if sort:
+            params["sort"] = sort
+        if lang:
+            params["lang"] = lang
+
+        for key, value in kwargs.items():
+            if value is not None:
+                params[key] = value
+
+        url = urljoin(self.base_url, "/api/v1/documents")
+        logger.debug(f"Searching Fess: {url} with params: {params}")
+
+        try:
+            response = await self.client.get(url, params=params)
+            response.raise_for_status()
+            result: dict[str, Any] = response.json()
+            return result
+        except httpx.HTTPError as e:
+            logger.error(f"Fess search error: {e}")
+            raise
+
+    async def suggest(
+        self,
+        prefix: str,
+        label: str | None = None,
+        num: int = 10,
+        fields: list[str] | None = None,
+        lang: str | None = None,
+    ) -> dict[str, Any]:
+        """Get suggestions from Fess."""
+        params: dict[str, Any] = {"q": prefix, "num": num}
+
+        if label:
+            params["label"] = label
+        if fields:
+            params["fields"] = ",".join(fields)
+        if lang:
+            params["lang"] = lang
+
+        url = urljoin(self.base_url, "/api/v1/suggest-words")
+        logger.debug(f"Getting suggestions: {url} with params: {params}")
+
+        try:
+            response = await self.client.get(url, params=params)
+            response.raise_for_status()
+            result: dict[str, Any] = response.json()
+            return result
+        except httpx.HTTPError as e:
+            logger.error(f"Fess suggest error: {e}")
+            raise
+
+    async def popular_words(
+        self, label: str | None = None, seed: int | None = None, field: str | None = None
+    ) -> dict[str, Any]:
+        """Get popular words from Fess."""
+        params: dict[str, Any] = {}
+
+        if label:
+            params["label"] = label
+        if seed is not None:
+            params["seed"] = seed
+        if field:
+            params["field"] = field
+
+        url = urljoin(self.base_url, "/api/v1/popular-words")
+        logger.debug(f"Getting popular words: {url} with params: {params}")
+
+        try:
+            response = await self.client.get(url, params=params)
+            response.raise_for_status()
+            result: dict[str, Any] = response.json()
+            return result
+        except httpx.HTTPError as e:
+            logger.error(f"Fess popular words error: {e}")
+            raise
+
+    async def list_labels(self) -> dict[str, Any]:
+        """List all labels in Fess."""
+        url = urljoin(self.base_url, "/api/v1/labels")
+        logger.debug(f"Listing labels: {url}")
+
+        try:
+            response = await self.client.get(url)
+            response.raise_for_status()
+            result: dict[str, Any] = response.json()
+            return result
+        except httpx.HTTPError as e:
+            logger.error(f"Fess list labels error: {e}")
+            raise
+
+    async def health(self) -> dict[str, Any]:
+        """Check Fess health status."""
+        url = urljoin(self.base_url, "/api/v1/health")
+        logger.debug(f"Checking health: {url}")
+
+        try:
+            response = await self.client.get(url)
+            response.raise_for_status()
+            result: dict[str, Any] = response.json()
+            return result
+        except httpx.HTTPError as e:
+            logger.error(f"Fess health check error: {e}")
+            raise
+
+    async def fetch_document_content(
+        self, url: str, config: ContentFetchConfig
+    ) -> tuple[str, str]:
+        """
+        Fetch full document content from URL.
+
+        Returns:
+            Tuple of (content, hash)
+        """
+        if not config.enabled:
+            raise ValueError("Content fetching is disabled")
+
+        parsed = urlparse(url)
+        if parsed.scheme not in config.allowedSchemes:
+            raise ValueError(f"Scheme {parsed.scheme} not allowed")
+
+        if (
+            not config.allowPrivateNetworkTargets
+            and self._is_private_network(parsed.hostname or "")
+            and (not config.allowedHostAllowlist or parsed.hostname not in config.allowedHostAllowlist)
+        ):
+            raise ValueError(f"Access to private network target {parsed.hostname} not allowed")
+
+        headers = {"User-Agent": config.userAgent}
+        timeout = config.timeoutMs / 1000.0
+
+        logger.debug(f"Fetching content from: {url}")
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(url, headers=headers, follow_redirects=True)
+                response.raise_for_status()
+
+                content_type = response.headers.get("content-type", "").lower()
+                content_bytes = response.content[: config.maxBytes]
+
+                if "html" in content_type:
+                    content = self._extract_text_from_html(content_bytes)
+                elif "pdf" in content_type:
+                    if not config.enablePdf:
+                        raise ValueError("PDF conversion is disabled")
+                    content = self._extract_text_from_pdf(content_bytes)
+                else:
+                    content = content_bytes.decode("utf-8", errors="ignore")
+
+                content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+                return content, content_hash
+
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to fetch content from {url}: {e}")
+            raise
+
+    def _is_private_network(self, hostname: str) -> bool:
+        """Check if hostname is a private network address."""
+        if not hostname:
+            return False
+
+        if hostname in ["localhost", "127.0.0.1", "::1"]:
+            return True
+
+        parts = hostname.split(".")
+        if len(parts) == 4:
+            try:
+                first = int(parts[0])
+                second = int(parts[1])
+                if first == 10:
+                    return True
+                if first == 172 and 16 <= second <= 31:
+                    return True
+                if first == 192 and second == 168:
+                    return True
+            except ValueError:
+                pass
+
+        return False
+
+    def _extract_text_from_html(self, content: bytes) -> str:
+        """Extract text from HTML content."""
+        try:
+            soup = BeautifulSoup(content, "html.parser")
+
+            for script in soup(["script", "style", "meta", "link"]):
+                script.decompose()
+
+            text = soup.get_text(separator="\n", strip=True)
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
+            return "\n\n".join(lines)
+        except Exception as e:
+            logger.warning(f"Failed to parse HTML: {e}")
+            return content.decode("utf-8", errors="ignore")
+
+    def _extract_text_from_pdf(self, content: bytes) -> str:
+        """Extract text from PDF content."""
+        try:
+            from io import BytesIO
+
+            pdf_file = BytesIO(content)
+            reader = PdfReader(pdf_file)
+
+            text_parts = []
+            for page in reader.pages:
+                text = page.extract_text()
+                if text:
+                    text_parts.append(text)
+
+            return "\n\n".join(text_parts)
+        except Exception as e:
+            logger.warning(f"Failed to parse PDF: {e}")
+            raise ValueError(f"PDF parsing failed: {e}") from e

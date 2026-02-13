@@ -25,7 +25,10 @@ classifiers = [
 ]
 
 dependencies = [
-    # Add your runtime dependencies here
+    "mcp>=1.0.0",
+    "httpx>=0.27.0",
+    "beautifulsoup4>=4.12.0",
+    "PyPDF2>=3.0.0",
 ]
 
 [project.optional-dependencies]
@@ -79,6 +82,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]  # Allow unused imports in __init__ files
 "tests/*" = ["S101"]      # Allow assert in tests
+"src/mcp_fess/config.py" = ["N815"]  # Allow mixedCase for JSON schema field names
+"src/mcp_fess/logging_utils.py" = ["SIM115"]  # Need file handle for logger
 
 [tool.ruff.format]
 quote-style = "double"
