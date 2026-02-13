@@ -96,6 +96,20 @@ Create a configuration file at `~/.mcp-feiss/config.json`:
 mcp-fess
 ```
 
+### Using FastMCP CLI
+
+You can also run the server using the `fastmcp` CLI tool:
+
+```bash
+fastmcp run src/mcp_fess/app.py
+```
+
+Or use the package directly:
+
+```bash
+python -m mcp_fess
+```
+
 ### With Debug Logging
 
 ```bash
