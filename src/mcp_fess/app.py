@@ -2,6 +2,7 @@
 
 import json
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -28,10 +29,10 @@ name: {domain.name}
 fessLabel: {domain.labelFilter}"""
 
 
-def _setup_tools(mcp: FastMCP, domain_id: str) -> None:
+def _setup_tools(app: FastMCP, domain_id: str) -> None:
     """Set up MCP tools using FastMCP decorators."""
 
-    @mcp.tool(name=f"fess_{domain_id}_search")
+    @app.tool(name=f"fess_{domain_id}_search")
     async def search(
         query: str,
         page_size: int = 20,
@@ -65,7 +66,7 @@ def _setup_tools(mcp: FastMCP, domain_id: str) -> None:
 
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name=f"fess_{domain_id}_suggest")
+    @app.tool(name=f"fess_{domain_id}_suggest")
     async def suggest(
         prefix: str,
         num: int = 10,
@@ -92,7 +93,7 @@ def _setup_tools(mcp: FastMCP, domain_id: str) -> None:
 
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name=f"fess_{domain_id}_popular_words")
+    @app.tool(name=f"fess_{domain_id}_popular_words")
     async def popular_words(
         seed: int | None = None,
         field: str | None = None,
@@ -107,21 +108,21 @@ def _setup_tools(mcp: FastMCP, domain_id: str) -> None:
 
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name=f"fess_{domain_id}_list_labels")
+    @app.tool(name=f"fess_{domain_id}_list_labels")
     async def list_labels() -> str:
         """List all labels configured in the underlying Fess server."""
         fess_client = _server_state["fess_client"]
         result = await fess_client.list_labels()
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name=f"fess_{domain_id}_health")
+    @app.tool(name=f"fess_{domain_id}_health")
     async def health() -> str:
         """Check the health status of the underlying Fess server."""
         fess_client = _server_state["fess_client"]
         result = await fess_client.health()
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name=f"fess_{domain_id}_job_get")
+    @app.tool(name=f"fess_{domain_id}_job_get")
     async def job_get(job_id: str) -> str:
         """Retrieve progress information for a long-running operation."""
         if not job_id:
@@ -135,10 +136,10 @@ def _setup_tools(mcp: FastMCP, domain_id: str) -> None:
         return json.dumps(job, indent=2)
 
 
-def _setup_resources(mcp: FastMCP, domain_id: str) -> None:
+def _setup_resources(app: FastMCP, domain_id: str) -> None:
     """Set up MCP resources using FastMCP decorators."""
 
-    @mcp.resource(f"fess://{domain_id}/doc/{{doc_id}}")
+    @app.resource(f"fess://{domain_id}/doc/{{doc_id}}")
     async def read_doc(doc_id: str) -> str:
         """Document metadata."""
         config = _server_state["config"]
@@ -162,7 +163,7 @@ def _setup_resources(mcp: FastMCP, domain_id: str) -> None:
             logger.error(f"Failed to read resource: {e}")
             raise
 
-    @mcp.resource(f"fess://{domain_id}/doc/{{doc_id}}/content")
+    @app.resource(f"fess://{domain_id}/doc/{{doc_id}}/content")
     async def read_doc_content(doc_id: str) -> str:
         """Full document content."""
         config = _server_state["config"]
@@ -198,7 +199,7 @@ def _setup_resources(mcp: FastMCP, domain_id: str) -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastMCP) -> Any:
+async def lifespan(app: FastMCP) -> AsyncGenerator[None, None]:
     """Lifespan handler for the FastMCP app."""
     # Startup: Load config and initialize server components
     config = load_config()
