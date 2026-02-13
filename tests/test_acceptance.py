@@ -146,7 +146,7 @@ async def test_at_mcp_001_initialize_flow(valid_config):
     assert server.protocol_version == "2025-03-26"
 
     # Verify server was created
-    assert server.server is not None
+    assert server.mcp is not None
     assert server.domain_id == "finance"
 
     await server.cleanup()
