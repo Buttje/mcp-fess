@@ -1,10 +1,21 @@
 """Configuration management for MCP-Fess server."""
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
+
+logger = logging.getLogger("mcp_fess")
+
+
+class LabelDescriptor(BaseModel):
+    """Configuration for a single label."""
+
+    title: str
+    description: str
+    examples: list[str] = Field(default_factory=list)
 
 
 class DomainConfig(BaseModel):
@@ -13,7 +24,7 @@ class DomainConfig(BaseModel):
     id: str
     name: str
     description: str | None = None
-    labelFilter: str = Field(alias="labelFilter")
+    labelFilter: str | None = Field(default=None, alias="labelFilter")
 
 
 class HttpTransportConfig(BaseModel):
@@ -72,6 +83,9 @@ class ServerConfig(BaseModel):
 
     fessBaseUrl: str
     domain: DomainConfig
+    labels: dict[str, LabelDescriptor] = Field(default_factory=dict)
+    defaultLabel: str = "all"
+    strictLabels: bool = True
     httpTransport: HttpTransportConfig = Field(default_factory=HttpTransportConfig)
     timeouts: TimeoutsConfig = Field(default_factory=TimeoutsConfig)
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
@@ -86,6 +100,19 @@ class ServerConfig(BaseModel):
         if not v:
             raise ValueError("fessBaseUrl cannot be empty")
         return v.rstrip("/")
+
+    def get_effective_default_label(self) -> str:
+        """Get the effective default label, handling backward compatibility."""
+        # Backward compatibility: use domain.labelFilter if present and defaultLabel is default value
+        if self.domain.labelFilter and self.defaultLabel == "all":
+            logger.warning(
+                "domain.labelFilter is deprecated. Please use defaultLabel instead. "
+                "Setting defaultLabel to '%s'",
+                self.domain.labelFilter,
+            )
+            return self.domain.labelFilter
+
+        return self.defaultLabel
 
     model_config = {"populate_by_name": True}
 

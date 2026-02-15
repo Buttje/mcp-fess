@@ -1,7 +1,9 @@
 """Fess API client."""
 
+import asyncio
 import hashlib
 import logging
+import time
 from io import BytesIO
 from typing import Any
 from urllib.parse import urljoin, urlparse
@@ -15,6 +17,32 @@ from .config import ContentFetchConfig
 logger = logging.getLogger("mcp_fess")
 
 
+class LabelCache:
+    """Cache for Fess labels with TTL."""
+
+    def __init__(self, ttl_seconds: int = 300) -> None:
+        """Initialize label cache with TTL (default 5 minutes)."""
+        self.ttl_seconds = ttl_seconds
+        self._labels: list[dict[str, Any]] = []
+        self._last_fetch: float = 0
+        self._lock = asyncio.Lock()
+
+    def is_expired(self) -> bool:
+        """Check if cache is expired."""
+        return time.time() - self._last_fetch > self.ttl_seconds
+
+    async def get(self) -> list[dict[str, Any]]:
+        """Get cached labels."""
+        async with self._lock:
+            return self._labels.copy()
+
+    async def set(self, labels: list[dict[str, Any]]) -> None:
+        """Set cached labels."""
+        async with self._lock:
+            self._labels = labels
+            self._last_fetch = time.time()
+
+
 class FessClient:
     """Client for interacting with Fess REST API."""
 
@@ -22,10 +50,39 @@ class FessClient:
         self.base_url = base_url
         self.timeout = timeout_ms / 1000.0
         self.client = httpx.AsyncClient(timeout=self.timeout)
+        self.label_cache = LabelCache()
 
     async def close(self) -> None:
         """Close the HTTP client."""
         await self.client.aclose()
+
+    async def get_cached_labels(self, force_refresh: bool = False) -> list[dict[str, Any]]:
+        """
+        Get labels with caching.
+
+        Returns list of label dicts with 'name' and 'value' keys.
+        Caches results for 5 minutes to avoid hitting Fess on every request.
+        """
+        if not force_refresh and not self.label_cache.is_expired():
+            cached = await self.label_cache.get()
+            if cached:
+                logger.debug("Returning cached labels")
+                return cached
+
+        try:
+            logger.debug("Fetching fresh labels from Fess")
+            result = await self.list_labels()
+            labels: list[dict[str, Any]] = result.get("data", [])
+            await self.label_cache.set(labels)
+            return labels
+        except Exception as e:
+            logger.warning(f"Failed to fetch labels from Fess: {e}")
+            # Return cached data even if expired when Fess is down
+            cached = await self.label_cache.get()
+            if cached:
+                logger.info("Returning stale cached labels due to Fess error")
+                return cached
+            return []
 
     async def search(
         self,

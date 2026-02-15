@@ -17,7 +17,6 @@ def test_config():
             id="test_domain",
             name="Test Domain",
             description="Test description",
-            labelFilter="test",
         ),
     )
 
@@ -53,7 +52,6 @@ def test_get_domain_block(fess_server):
     assert "id: test_domain" in domain_block
     assert "name: Test Domain" in domain_block
     assert "description: Test description" in domain_block
-    assert "fessLabel: test" in domain_block
 
 
 @pytest.mark.asyncio
@@ -86,6 +84,54 @@ async def test_handle_search_success(fess_server):
         result = await fess_server._handle_search({"query": "test"})
         assert isinstance(result, str)
         assert "Test" in result
+
+
+@pytest.mark.asyncio
+async def test_handle_search_with_label(fess_server):
+    """Test search with explicit label."""
+    mock_result = {"data": [{"title": "Test"}]}
+    mock_labels = [{"value": "hr", "name": "HR"}]
+
+    with (
+        patch.object(fess_server.fess_client, "search", new=AsyncMock(return_value=mock_result)),
+        patch.object(
+            fess_server.fess_client, "get_cached_labels", new=AsyncMock(return_value=mock_labels)
+        ),
+    ):
+        # Add hr label to config
+        from mcp_fess.config import LabelDescriptor
+
+        fess_server.config.labels["hr"] = LabelDescriptor(
+            title="HR", description="HR docs", examples=[]
+        )
+
+        result = await fess_server._handle_search({"query": "test", "label": "hr"})
+        assert isinstance(result, str)
+        assert "Test" in result
+
+
+@pytest.mark.asyncio
+async def test_handle_search_with_label_all(fess_server):
+    """Test search with label='all'."""
+    mock_result = {"data": [{"title": "Test"}]}
+
+    with patch.object(fess_server.fess_client, "search", new=AsyncMock(return_value=mock_result)):
+        result = await fess_server._handle_search({"query": "test", "label": "all"})
+        assert isinstance(result, str)
+        assert "Test" in result
+
+
+@pytest.mark.asyncio
+async def test_handle_search_invalid_label_strict(fess_server):
+    """Test search with invalid label in strict mode."""
+    mock_labels = []
+
+    with patch.object(
+        fess_server.fess_client, "get_cached_labels", new=AsyncMock(return_value=mock_labels)
+    ):
+        fess_server.config.strictLabels = True
+        with pytest.raises(ValueError, match="Unknown label"):
+            await fess_server._handle_search({"query": "test", "label": "invalid"})
 
 
 @pytest.mark.asyncio
@@ -129,14 +175,29 @@ async def test_handle_popular_words_success(fess_server):
 @pytest.mark.asyncio
 async def test_handle_list_labels_success(fess_server):
     """Test successful list labels."""
-    mock_result = {"labels": [{"name": "test"}]}
+    mock_labels = [{"value": "hr", "name": "HR Department"}]
 
     with patch.object(
-        fess_server.fess_client, "list_labels", new=AsyncMock(return_value=mock_result)
+        fess_server.fess_client, "get_cached_labels", new=AsyncMock(return_value=mock_labels)
     ):
         result = await fess_server._handle_list_labels()
         assert isinstance(result, str)
-        assert "test" in result
+        assert "all" in result  # "all" should always be included
+        assert "defaultLabel" in result
+
+
+@pytest.mark.asyncio
+async def test_handle_list_labels_with_fess_down(fess_server):
+    """Test list labels when Fess is down."""
+    with patch.object(
+        fess_server.fess_client,
+        "get_cached_labels",
+        new=AsyncMock(side_effect=Exception("Fess down")),
+    ):
+        result = await fess_server._handle_list_labels()
+        assert isinstance(result, str)
+        assert "all" in result  # "all" should still be in config
+        assert "fessAvailable" in result
 
 
 @pytest.mark.asyncio
@@ -458,4 +519,18 @@ def test_get_domain_block_without_description(test_config):
     assert "id: test_domain" in domain_block
     assert "name: Test Domain" in domain_block
     assert "description:" not in domain_block
-    assert "fessLabel: test" in domain_block
+
+
+def test_server_default_label(test_config):
+    """Test server uses defaultLabel from config."""
+    test_config.defaultLabel = "all"
+    server = FessServer(test_config)
+    assert server.default_label == "all"
+
+
+def test_server_default_label_backward_compat(test_config):
+    """Test server backward compatibility with labelFilter."""
+    test_config.domain.labelFilter = "test_label"
+    server = FessServer(test_config)
+    # Should use labelFilter when defaultLabel is default
+    assert server.default_label == "test_label"

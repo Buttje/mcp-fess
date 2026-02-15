@@ -28,6 +28,17 @@ class FessServer:
         self.mcp = FastMCP(name=server_name)
         self.domain_id = config.domain.id
         self.jobs: dict[str, dict[str, Any]] = {}
+        self.default_label = config.get_effective_default_label()
+
+        # Ensure "all" label is always in config
+        if "all" not in self.config.labels:
+            from .config import LabelDescriptor
+
+            self.config.labels["all"] = LabelDescriptor(
+                title="All documents",
+                description="Search across the whole Fess index without label filtering.",
+                examples=["company policy", "project documentation"],
+            )
 
         self._setup_tools()
         self._setup_resources()
@@ -48,16 +59,33 @@ fessLabel: {domain.labelFilter}"""
         @self.mcp.tool(name=f"fess_{self.domain_id}_search")
         async def search(
             query: str,
+            label: str | None = None,
             page_size: int = 20,
             start: int = 0,
             sort: str | None = None,
             lang: str | None = None,
             include_fields: list[str] | None = None,
         ) -> str:
-            """Search the knowledge domain for documents matching a query."""
+            """Search documents in Fess.
+
+            Use this tool whenever you need factual internal information; don't guess—search first.
+            If unsure which label to use, call the list_labels tool first.
+
+            Args:
+                query: Search term
+                label: Label value to scope the search (default uses configured defaultLabel).
+                       Use 'all' to search across the entire index without label filtering.
+                       Call list_labels to see available labels.
+                page_size: Number of results (default 20, max 100)
+                start: Starting index (default 0)
+                sort: Sort order
+                lang: Search language
+                include_fields: Fields to include in results
+            """
             return await self._handle_search(
                 {
                     "query": query,
+                    "label": label,
                     "pageSize": page_size,
                     "start": start,
                     "sort": sort,
@@ -98,7 +126,11 @@ fessLabel: {domain.labelFilter}"""
 
         @self.mcp.tool(name=f"fess_{self.domain_id}_list_labels")
         async def list_labels() -> str:
-            """List all labels configured in the underlying Fess server."""
+            """List available Fess labels and what each label contains.
+
+            Call this tool if unsure which label to use for searching.
+            Returns label values with descriptions, examples, and availability status.
+            """
             return await self._handle_list_labels()
 
         @self.mcp.tool(name=f"fess_{self.domain_id}_health")
@@ -118,9 +150,12 @@ fessLabel: {domain.labelFilter}"""
         async def read_doc(doc_id: str) -> str:
             """Document metadata."""
             try:
+                # Use default label if it's not "all"
+                label_filter = None if self.default_label == "all" else self.default_label
+
                 result = await self.fess_client.search(
                     query=f"doc_id:{doc_id}",
-                    label_filter=self.config.domain.labelFilter,
+                    label_filter=label_filter,
                     num=1,
                 )
 
@@ -139,9 +174,12 @@ fessLabel: {domain.labelFilter}"""
         async def read_doc_content(doc_id: str) -> str:
             """Full document content."""
             try:
+                # Use default label if it's not "all"
+                label_filter = None if self.default_label == "all" else self.default_label
+
                 result = await self.fess_client.search(
                     query=f"doc_id:{doc_id}",
-                    label_filter=self.config.domain.labelFilter,
+                    label_filter=label_filter,
                     num=1,
                 )
 
@@ -168,6 +206,53 @@ fessLabel: {domain.labelFilter}"""
                 logger.error(f"Failed to read resource: {e}")
                 raise
 
+        @self.mcp.resource(f"fess://{self.domain_id}/labels")
+        async def read_labels() -> str:
+            """Available Fess labels with descriptions."""
+            return await self._handle_list_labels()
+
+    async def _validate_label(self, label: str) -> None:
+        """Validate that a label is allowed.
+
+        Args:
+            label: Label to validate
+
+        Raises:
+            ValueError: If label is invalid in strict mode
+        """
+        if label == "all":
+            return  # "all" is always allowed
+
+        # Check if label is in config
+        if label in self.config.labels:
+            return
+
+        # Check if label exists in Fess
+        try:
+            fess_labels = await self.fess_client.get_cached_labels()
+            fess_label_values = {lbl.get("value") for lbl in fess_labels if lbl.get("value")}
+
+            if label in fess_label_values:
+                if self.config.strictLabels:
+                    logger.warning(
+                        f"Label '{label}' exists in Fess but not in config. "
+                        "Consider adding it to the labels configuration."
+                    )
+                return
+        except Exception as e:
+            logger.warning(f"Failed to validate label against Fess: {e}")
+
+        # Label not found
+        if self.config.strictLabels:
+            raise ValueError(
+                f"Unknown label '{label}'. Call list_labels to see available labels."
+            )
+        else:
+            logger.warning(
+                f"Label '{label}' is not configured and may not exist in Fess. "
+                "Proceeding anyway (strictLabels=false)."
+            )
+
     async def _handle_search(self, arguments: dict[str, Any]) -> str:
         """Handle search tool."""
         query = arguments.get("query")
@@ -183,12 +268,27 @@ fessLabel: {domain.labelFilter}"""
         if not isinstance(start, int) or start < 0:
             raise ValueError("start must be a non-negative integer")
 
+        # Determine effective label
+        label = arguments.get("label")
+        if label is None:
+            label = self.default_label
+
+        # Validate label type
+        if not isinstance(label, str):
+            raise ValueError("label must be a string")
+
+        # Validate label value
+        await self._validate_label(label)
+
         sort = arguments.get("sort")
         lang = arguments.get("lang")
 
+        # Map label to Fess query parameter
+        label_filter = None if label == "all" else label
+
         result = await self.fess_client.search(
             query=query,
-            label_filter=self.config.domain.labelFilter,
+            label_filter=label_filter,
             start=start,
             num=page_size,
             sort=sort,
@@ -210,9 +310,12 @@ fessLabel: {domain.labelFilter}"""
         fields = arguments.get("fields")
         lang = arguments.get("lang")
 
+        # Use default label if it's not "all"
+        label = None if self.default_label == "all" else self.default_label
+
         result = await self.fess_client.suggest(
             prefix=prefix,
-            label=self.config.domain.labelFilter,
+            label=label,
             num=num,
             fields=fields,
             lang=lang,
@@ -225,15 +328,69 @@ fessLabel: {domain.labelFilter}"""
         seed = arguments.get("seed")
         field = arguments.get("field")
 
-        result = await self.fess_client.popular_words(
-            label=self.config.domain.labelFilter, seed=seed, field=field
-        )
+        # Use default label if it's not "all"
+        label = None if self.default_label == "all" else self.default_label
+
+        result = await self.fess_client.popular_words(label=label, seed=seed, field=field)
 
         return json.dumps(result, indent=2)
 
     async def _handle_list_labels(self) -> str:
-        """Handle list labels tool."""
-        result = await self.fess_client.list_labels()
+        """Handle list labels tool.
+
+        Returns merged catalog of labels from config and Fess with descriptions.
+        """
+        # Get labels from Fess
+        fess_labels_available = True
+        try:
+            fess_labels = await self.fess_client.get_cached_labels()
+            fess_label_map: dict[str, str] = {
+                lbl.get("value", ""): lbl.get("name", "") for lbl in fess_labels if lbl.get("value")
+            }
+        except Exception as e:
+            logger.warning(f"Failed to fetch labels from Fess: {e}")
+            fess_labels_available = False
+            fess_label_map = {}
+
+        # Merge with config
+        merged_labels = []
+
+        # Add all configured labels
+        for value, descriptor in self.config.labels.items():
+            merged_labels.append(
+                {
+                    "value": value,
+                    "name": fess_label_map.get(value, ""),
+                    "title": descriptor.title,
+                    "description": descriptor.description,
+                    "examples": descriptor.examples,
+                    "isConfigured": True,
+                    "isPresentInFess": value in fess_label_map or value == "all",
+                }
+            )
+
+        # Add unconfigured labels from Fess
+        if not self.config.strictLabels:
+            for value, name in fess_label_map.items():
+                if value not in self.config.labels:
+                    merged_labels.append(
+                        {
+                            "value": value,
+                            "name": name,
+                            "title": name or value,
+                            "description": "No description configured.",
+                            "examples": [],
+                            "isConfigured": False,
+                            "isPresentInFess": True,
+                        }
+                    )
+
+        result = {
+            "labels": merged_labels,
+            "defaultLabel": self.default_label,
+            "strictLabels": self.config.strictLabels,
+            "fessAvailable": fess_labels_available,
+        }
 
         return json.dumps(result, indent=2)
 

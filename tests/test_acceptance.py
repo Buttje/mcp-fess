@@ -23,8 +23,15 @@ def valid_config_dict():
             "id": "finance",
             "name": "Finance Domain",
             "description": "Financial data and reports",
-            "labelFilter": "finance_label",
         },
+        "labels": {
+            "finance_label": {
+                "title": "Finance",
+                "description": "Financial documents",
+                "examples": [],
+            }
+        },
+        "defaultLabel": "finance_label",
     }
 
 
@@ -184,7 +191,7 @@ async def test_at_tool_001_tool_listing(valid_config):
     assert "[Knowledge Domain]" in domain_block
     assert f"id: {valid_config.domain.id}" in domain_block
     assert f"name: {valid_config.domain.name}" in domain_block
-    assert f"fessLabel: {valid_config.domain.labelFilter}" in domain_block
+    # Domain block no longer includes fessLabel (that's now in defaultLabel config)
 
     # Tools are registered in the MCP server
     # We verify domain_id is used in tool naming
@@ -201,7 +208,7 @@ async def test_at_tool_002_search_basic(valid_config):
     """
     server = FessServer(valid_config)
 
-    # Mock Fess client
+    # Mock Fess client and label cache
     server.fess_client.search = AsyncMock(
         return_value={
             "response": {
@@ -218,6 +225,9 @@ async def test_at_tool_002_search_basic(valid_config):
             }
         }
     )
+    server.fess_client.get_cached_labels = AsyncMock(
+        return_value=[{"value": "finance_label", "name": "Finance"}]
+    )
 
     result = await server._handle_search({"query": "test"})
 
@@ -225,7 +235,8 @@ async def test_at_tool_002_search_basic(valid_config):
     server.fess_client.search.assert_called_once()
     call_args = server.fess_client.search.call_args[1]
     assert call_args["query"] == "test"
-    assert call_args["label_filter"] == valid_config.domain.labelFilter
+    # Should use defaultLabel (finance_label)
+    assert call_args["label_filter"] == "finance_label"
 
     # Verify response format
     assert result is not None
@@ -273,7 +284,8 @@ async def test_at_tool_004_suggest(valid_config):
     call_args = server.fess_client.suggest.call_args[1]
     assert call_args["prefix"] == "foo"
     assert call_args["num"] == 5
-    assert call_args["label"] == valid_config.domain.labelFilter
+    # Should use defaultLabel (finance_label)
+    assert call_args["label"] == "finance_label"
 
     assert result is not None
 
@@ -296,7 +308,8 @@ async def test_at_tool_005_popular_words(valid_config):
 
     server.fess_client.popular_words.assert_called_once()
     call_args = server.fess_client.popular_words.call_args[1]
-    assert call_args["label"] == valid_config.domain.labelFilter
+    # Should use defaultLabel (finance_label)
+    assert call_args["label"] == "finance_label"
 
     assert result is not None
 
@@ -402,7 +415,7 @@ async def test_at_res_002_domain_block_in_resources(valid_config):
     assert "[Knowledge Domain]" in domain_block
     assert f"id: {valid_config.domain.id}" in domain_block
     assert f"name: {valid_config.domain.name}" in domain_block
-    assert f"fessLabel: {valid_config.domain.labelFilter}" in domain_block
+    # Domain block no longer includes fessLabel (that's now in defaultLabel config)
 
     await server.cleanup()
 

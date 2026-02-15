@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from mcp_fess.config import ContentFetchConfig
-from mcp_fess.fess_client import FessClient
+from mcp_fess.fess_client import FessClient, LabelCache
 
 
 @pytest.fixture
@@ -686,3 +686,104 @@ def test_extract_text_from_pdf_invalid(fess_client):
 
     with pytest.raises(ValueError, match="PDF parsing failed"):
         fess_client._extract_text_from_pdf(invalid_pdf)
+
+
+# Label cache tests
+@pytest.mark.asyncio
+async def test_label_cache_initialization():
+    """Test label cache initialization."""
+    cache = LabelCache(ttl_seconds=60)
+    assert cache.ttl_seconds == 60
+    assert await cache.get() == []
+    assert cache.is_expired() is True
+
+
+@pytest.mark.asyncio
+async def test_label_cache_set_and_get():
+    """Test setting and getting labels from cache."""
+    cache = LabelCache(ttl_seconds=60)
+    labels = [{"value": "hr", "name": "HR"}]
+
+    await cache.set(labels)
+    cached = await cache.get()
+
+    assert cached == labels
+    assert cache.is_expired() is False
+
+
+@pytest.mark.asyncio
+async def test_label_cache_expiration():
+    """Test label cache expiration."""
+    import asyncio
+
+    cache = LabelCache(ttl_seconds=1)
+    labels = [{"value": "hr", "name": "HR"}]
+
+    await cache.set(labels)
+    assert cache.is_expired() is False
+
+    # Wait for cache to expire
+    await asyncio.sleep(1.1)
+    assert cache.is_expired() is True
+
+
+@pytest.mark.asyncio
+async def test_get_cached_labels_fresh(fess_client):
+    """Test getting fresh cached labels."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"data": [{"value": "hr", "name": "HR"}]}
+    mock_response.raise_for_status = MagicMock()
+
+    with patch.object(fess_client.client, "get", new=AsyncMock(return_value=mock_response)):
+        labels = await fess_client.get_cached_labels()
+        assert len(labels) == 1
+        assert labels[0]["value"] == "hr"
+
+
+@pytest.mark.asyncio
+async def test_get_cached_labels_uses_cache(fess_client):
+    """Test that cached labels are used when not expired."""
+    # Prepopulate cache
+    cached_labels = [{"value": "cached", "name": "Cached"}]
+    await fess_client.label_cache.set(cached_labels)
+
+    # This should return cached data without calling Fess
+    labels = await fess_client.get_cached_labels()
+    assert labels == cached_labels
+
+
+@pytest.mark.asyncio
+async def test_get_cached_labels_fess_down(fess_client):
+    """Test getting cached labels when Fess is down."""
+    # Prepopulate cache with stale data
+    stale_labels = [{"value": "stale", "name": "Stale"}]
+    await fess_client.label_cache.set(stale_labels)
+
+    # Force cache to expire
+    fess_client.label_cache._last_fetch = 0
+
+    # Mock Fess error
+    with patch.object(
+        fess_client.client, "get", new=AsyncMock(side_effect=Exception("Fess down"))
+    ):
+        labels = await fess_client.get_cached_labels()
+        # Should return stale cache
+        assert labels == stale_labels
+
+
+@pytest.mark.asyncio
+async def test_get_cached_labels_force_refresh(fess_client):
+    """Test force refresh of cached labels."""
+    # Prepopulate cache
+    old_labels = [{"value": "old", "name": "Old"}]
+    await fess_client.label_cache.set(old_labels)
+
+    # Mock fresh data from Fess
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"data": [{"value": "new", "name": "New"}]}
+    mock_response.raise_for_status = MagicMock()
+
+    with patch.object(fess_client.client, "get", new=AsyncMock(return_value=mock_response)):
+        labels = await fess_client.get_cached_labels(force_refresh=True)
+        assert len(labels) == 1
+        assert labels[0]["value"] == "new"
