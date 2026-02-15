@@ -103,12 +103,8 @@ class ServerConfig(BaseModel):
 
     def get_effective_default_label(self) -> str:
         """Get the effective default label, handling backward compatibility."""
-        # If defaultLabel is explicitly set and different from "all", use it
-        if hasattr(self, "_explicit_default_label"):
-            return self.defaultLabel
-
-        # Backward compatibility: use domain.labelFilter if present
-        if self.domain.labelFilter:
+        # Backward compatibility: use domain.labelFilter if present and defaultLabel is default value
+        if self.domain.labelFilter and self.defaultLabel == "all":
             logger.warning(
                 "domain.labelFilter is deprecated. Please use defaultLabel instead. "
                 "Setting defaultLabel to '%s'",

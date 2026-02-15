@@ -714,7 +714,7 @@ async def test_label_cache_set_and_get():
 @pytest.mark.asyncio
 async def test_label_cache_expiration():
     """Test label cache expiration."""
-    import time
+    import asyncio
 
     cache = LabelCache(ttl_seconds=1)
     labels = [{"value": "hr", "name": "HR"}]
@@ -723,7 +723,7 @@ async def test_label_cache_expiration():
     assert cache.is_expired() is False
 
     # Wait for cache to expire
-    time.sleep(1.1)
+    await asyncio.sleep(1.1)
     assert cache.is_expired() is True
 
 
