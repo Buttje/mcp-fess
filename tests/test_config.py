@@ -112,6 +112,21 @@ def test_server_config_validation():
     assert config.strictLabels is True
 
 
+def test_server_config_minimal():
+    """Test server configuration with minimal required fields."""
+    config_data = {
+        "fessBaseUrl": "http://localhost:8080/",
+    }
+    config = ServerConfig(**config_data)
+    assert config.fessBaseUrl == "http://localhost:8080"
+    assert config.domain.id == "default"
+    assert config.domain.name == "Default Domain"
+    assert config.domain.description is None
+    assert config.domain.labelFilter is None
+    assert config.defaultLabel == "all"
+    assert config.strictLabels is True
+
+
 def test_server_config_with_labels():
     """Test server configuration with labels."""
     config_data = {

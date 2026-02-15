@@ -82,7 +82,11 @@ class ServerConfig(BaseModel):
     """Main server configuration."""
 
     fessBaseUrl: str
-    domain: DomainConfig
+    domain: DomainConfig = Field(
+        default_factory=lambda: DomainConfig(
+            id="default", name="Default Domain", description=None
+        )
+    )
     labels: dict[str, LabelDescriptor] = Field(default_factory=dict)
     defaultLabel: str = "all"
     strictLabels: bool = True
