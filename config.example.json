@@ -3,9 +3,27 @@
   "domain": {
     "id": "my_domain",
     "name": "My Knowledge Domain",
-    "description": "Description of the knowledge domain",
-    "labelFilter": "my_label"
+    "description": "Description of the knowledge domain"
   },
+  "labels": {
+    "all": {
+      "title": "All documents",
+      "description": "Search across the whole Fess index without label filtering.",
+      "examples": ["company policy", "architecture decision record"]
+    },
+    "hr": {
+      "title": "HR policies",
+      "description": "Employee handbook, benefits, leave, HR forms.",
+      "examples": ["vacation policy", "parental leave"]
+    },
+    "engineering": {
+      "title": "Engineering documentation",
+      "description": "Technical documentation, API references, architecture guides.",
+      "examples": ["API documentation", "deployment guide"]
+    }
+  },
+  "defaultLabel": "all",
+  "strictLabels": true,
   "httpTransport": {
     "bindAddress": "127.0.0.1",
     "port": 3000,

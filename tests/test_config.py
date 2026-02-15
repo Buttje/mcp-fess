@@ -9,6 +9,7 @@ from mcp_fess.config import (
     ContentFetchConfig,
     DomainConfig,
     HttpTransportConfig,
+    LabelDescriptor,
     LimitsConfig,
     LoggingConfig,
     SecurityConfig,
@@ -18,13 +19,31 @@ from mcp_fess.config import (
 )
 
 
+def test_label_descriptor():
+    """Test label descriptor configuration."""
+    label = LabelDescriptor(
+        title="Test Label",
+        description="Test description",
+        examples=["example1", "example2"],
+    )
+    assert label.title == "Test Label"
+    assert label.description == "Test description"
+    assert label.examples == ["example1", "example2"]
+
+
 def test_domain_config():
     """Test domain configuration."""
+    domain = DomainConfig(id="test", name="Test Domain", description="Test")
+    assert domain.id == "test"
+    assert domain.name == "Test Domain"
+
+
+def test_domain_config_with_label_filter():
+    """Test domain configuration with labelFilter (backward compatibility)."""
     domain = DomainConfig(
         id="test", name="Test Domain", description="Test", labelFilter="test_label"
     )
     assert domain.id == "test"
-    assert domain.name == "Test Domain"
     assert domain.labelFilter == "test_label"
 
 
@@ -85,11 +104,55 @@ def test_server_config_validation():
         "domain": {
             "id": "test",
             "name": "Test",
-            "labelFilter": "test",
         },
     }
     config = ServerConfig(**config_data)
     assert config.fessBaseUrl == "http://localhost:8080"
+    assert config.defaultLabel == "all"
+    assert config.strictLabels is True
+
+
+def test_server_config_with_labels():
+    """Test server configuration with labels."""
+    config_data = {
+        "fessBaseUrl": "http://localhost:8080/",
+        "domain": {
+            "id": "test",
+            "name": "Test",
+        },
+        "labels": {
+            "hr": {
+                "title": "HR",
+                "description": "HR documents",
+                "examples": ["policy"],
+            }
+        },
+        "defaultLabel": "hr",
+        "strictLabels": False,
+    }
+    config = ServerConfig(**config_data)
+    assert config.fessBaseUrl == "http://localhost:8080"
+    assert "hr" in config.labels
+    assert config.labels["hr"].title == "HR"
+    assert config.defaultLabel == "hr"
+    assert config.strictLabels is False
+
+
+def test_server_config_backward_compat_label_filter():
+    """Test server configuration backward compatibility with labelFilter."""
+    config_data = {
+        "fessBaseUrl": "http://localhost:8080/",
+        "domain": {
+            "id": "test",
+            "name": "Test",
+            "labelFilter": "test_label",
+        },
+    }
+    config = ServerConfig(**config_data)
+    assert config.domain.labelFilter == "test_label"
+    # get_effective_default_label should use labelFilter
+    effective_label = config.get_effective_default_label()
+    assert effective_label == "test_label"
 
 
 def test_server_config_validation_empty_url():
@@ -99,7 +162,6 @@ def test_server_config_validation_empty_url():
         "domain": {
             "id": "test",
             "name": "Test",
-            "labelFilter": "test",
         },
     }
     with pytest.raises(ValueError, match="fessBaseUrl cannot be empty"):
@@ -138,7 +200,6 @@ def test_load_config_valid(tmp_path, monkeypatch):
             "id": "test",
             "name": "Test Domain",
             "description": "Test",
-            "labelFilter": "test",
         },
     }
     config_file.write_text(json.dumps(config_data))
