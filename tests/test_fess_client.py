@@ -703,10 +703,10 @@ async def test_label_cache_set_and_get():
     """Test setting and getting labels from cache."""
     cache = LabelCache(ttl_seconds=60)
     labels = [{"value": "hr", "name": "HR"}]
-    
+
     await cache.set(labels)
     cached = await cache.get()
-    
+
     assert cached == labels
     assert cache.is_expired() is False
 
@@ -715,13 +715,13 @@ async def test_label_cache_set_and_get():
 async def test_label_cache_expiration():
     """Test label cache expiration."""
     import time
-    
+
     cache = LabelCache(ttl_seconds=1)
     labels = [{"value": "hr", "name": "HR"}]
-    
+
     await cache.set(labels)
     assert cache.is_expired() is False
-    
+
     # Wait for cache to expire
     time.sleep(1.1)
     assert cache.is_expired() is True
@@ -733,7 +733,7 @@ async def test_get_cached_labels_fresh(fess_client):
     mock_response = MagicMock()
     mock_response.json.return_value = {"data": [{"value": "hr", "name": "HR"}]}
     mock_response.raise_for_status = MagicMock()
-    
+
     with patch.object(fess_client.client, "get", new=AsyncMock(return_value=mock_response)):
         labels = await fess_client.get_cached_labels()
         assert len(labels) == 1
@@ -746,7 +746,7 @@ async def test_get_cached_labels_uses_cache(fess_client):
     # Prepopulate cache
     cached_labels = [{"value": "cached", "name": "Cached"}]
     await fess_client.label_cache.set(cached_labels)
-    
+
     # This should return cached data without calling Fess
     labels = await fess_client.get_cached_labels()
     assert labels == cached_labels
@@ -758,10 +758,10 @@ async def test_get_cached_labels_fess_down(fess_client):
     # Prepopulate cache with stale data
     stale_labels = [{"value": "stale", "name": "Stale"}]
     await fess_client.label_cache.set(stale_labels)
-    
+
     # Force cache to expire
     fess_client.label_cache._last_fetch = 0
-    
+
     # Mock Fess error
     with patch.object(
         fess_client.client, "get", new=AsyncMock(side_effect=Exception("Fess down"))
@@ -777,12 +777,12 @@ async def test_get_cached_labels_force_refresh(fess_client):
     # Prepopulate cache
     old_labels = [{"value": "old", "name": "Old"}]
     await fess_client.label_cache.set(old_labels)
-    
+
     # Mock fresh data from Fess
     mock_response = MagicMock()
     mock_response.json.return_value = {"data": [{"value": "new", "name": "New"}]}
     mock_response.raise_for_status = MagicMock()
-    
+
     with patch.object(fess_client.client, "get", new=AsyncMock(return_value=mock_response)):
         labels = await fess_client.get_cached_labels(force_refresh=True)
         assert len(labels) == 1
