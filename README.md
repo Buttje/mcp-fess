@@ -31,7 +31,23 @@ pip install -e .
 
 ## Configuration
 
-Create a configuration file at `~/.mcp-feiss/config.json`:
+Create a configuration file at `~/.mcp-feiss/config.json`.
+
+### Minimal Configuration
+
+The simplest configuration requires only the Fess server URL:
+
+```json
+{
+  "fessBaseUrl": "http://localhost:8080"
+}
+```
+
+This uses default values for all optional fields including a default domain with `id="default"` and `name="Default Domain"`.
+
+### Full Configuration Example
+
+For production use, you should provide explicit domain information and configure other settings:
 
 ```json
 {
@@ -99,7 +115,9 @@ Create a configuration file at `~/.mcp-feiss/config.json`:
 ### Configuration Fields
 
 - **fessBaseUrl** (required): Base URL of your Fess server
-- **domain** (required): Domain configuration with id, name, and optional description
+- **domain** (optional): Domain configuration with id, name, and optional description
+  - Defaults to `{"id": "default", "name": "Default Domain"}` if not specified
+  - Recommended to provide meaningful values for better tool identification
 - **labels** (optional): Label definitions with descriptions and examples
   - Each label has a `title`, `description`, and `examples` array
   - The `"all"` label is always available (even if not explicitly configured) and means "no label filtering"
