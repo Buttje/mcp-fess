@@ -64,7 +64,6 @@ def detect_os() -> tuple[str, str]:
 
     if system == "windows":
         # Try to detect Windows version
-        platform.version()
         release = platform.release()
 
         if release == "10":
