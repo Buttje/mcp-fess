@@ -204,19 +204,110 @@ class FessClient:
             logger.error(f"Fess health check error: {e}")
             raise
 
-    async def fetch_document_content(self, url: str, config: ContentFetchConfig) -> tuple[str, str]:
+    async def fetch_document_content_by_id(self, doc_id: str) -> tuple[str, str]:
         """
-        Fetch full document content from URL.
+        Fetch document content from Fess by document ID.
+
+        This method is used as a fallback for file:// URLs, fetching content
+        directly from Fess storage via the /api/v1/documents/{docId} endpoint.
+
+        Args:
+            doc_id: The Fess document ID
 
         Returns:
             Tuple of (content, hash)
+
+        Raises:
+            ValueError: If document cannot be fetched
+            httpx.HTTPError: If HTTP request fails
+        """
+        # Try to fetch document content via Fess API
+        # Fess stores the full content and we can retrieve it via the search API
+        url = urljoin(self.base_url, f"/api/v1/documents")
+        logger.debug(f"Fetching document content by ID from Fess: {doc_id}")
+
+        try:
+            # Search for the specific document by ID
+            result = await self.search(query=f"doc_id:{doc_id}", num=1)
+            docs = result.get("data", [])
+
+            if not docs:
+                raise ValueError(f"Document not found in Fess: {doc_id}")
+
+            doc = docs[0]
+
+            # Get the content from the document metadata
+            # Fess typically stores the full content in the 'content' or 'body' field
+            content = doc.get("content", "") or doc.get("body", "")
+
+            if not content:
+                # Try to get content from 'digest' field as a fallback
+                content = doc.get("digest", "")
+
+            if not content:
+                raise ValueError(
+                    f"Document {doc_id} found but has no retrievable content. "
+                    "The document may not have indexed content available."
+                )
+
+            content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            return content, content_hash
+
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to fetch document content by ID {doc_id}: {e}")
+            raise ValueError(
+                f"Unable to fetch document content for {doc_id} from Fess API: {e}"
+            ) from e
+
+    async def fetch_document_content(self, url: str, config: ContentFetchConfig, doc_id: str | None = None) -> tuple[str, str]:
+        """
+        Fetch full document content from URL.
+
+        For file:// URLs, attempts to fetch content via Fess API using the document ID.
+        For http/https URLs, fetches content directly from the URL.
+
+        Args:
+            url: The document URL
+            config: Content fetch configuration
+            doc_id: Optional document ID for file:// URL fallback
+
+        Returns:
+            Tuple of (content, hash)
+
+        Raises:
+            ValueError: If content fetching fails or is disabled
+            httpx.HTTPError: If HTTP request fails
         """
         if not config.enabled:
             raise ValueError("Content fetching is disabled")
 
         parsed = urlparse(url)
+
+        # Handle file:// scheme by fetching via Fess API
+        if parsed.scheme == "file":
+            if not doc_id:
+                raise ValueError(
+                    "Cannot fetch file:// URL without document ID. "
+                    "Please obtain the document ID from search results and use fetch_content_chunk tool."
+                )
+
+            logger.info(f"Detected file:// URL, fetching content via Fess API for doc_id: {doc_id}")
+            try:
+                return await self.fetch_document_content_by_id(doc_id)
+            except Exception as e:
+                logger.error(f"Failed to fetch file:// URL via Fess API: {e}")
+                raise ValueError(
+                    f"Unable to fetch content for file:// URL. "
+                    f"Fess API fallback failed: {e}"
+                ) from e
+
+        # Check allowed schemes for non-file URLs
         if parsed.scheme not in config.allowedSchemes:
-            raise ValueError(f"Scheme {parsed.scheme} not allowed")
+            raise ValueError(
+                f"Scheme '{parsed.scheme}' is not allowed. "
+                f"Allowed schemes: {', '.join(config.allowedSchemes)}. "
+                f"For file:// URLs, ensure document ID is provided for Fess API fallback."
+            )
 
         if (
             not config.allowPrivateNetworkTargets

@@ -685,7 +685,7 @@ async def test_handle_fetch_content_chunk_no_url(fess_server):
     with patch.object(
         fess_server.fess_client, "search", new=AsyncMock(return_value=mock_search_result)
     ):
-        with pytest.raises(ValueError, match="Document has no URL"):
+        with pytest.raises(ValueError, match="has no URL.*may not have accessible content"):
             await fess_server._handle_fetch_content_chunk({"docId": "test_doc"})
 
 

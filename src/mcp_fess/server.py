@@ -71,6 +71,15 @@ fessLabel: {domain.labelFilter}"""
             Use this tool whenever you need factual internal information; don't guess—search first.
             If unsure which label to use, call the list_labels tool first.
 
+            IMPORTANT: The 'content' fields in search results contain only the first {maxChunkBytes}
+            characters as snippets. To read longer sections or full chapters of a document, use the
+            fetch_content_chunk tool with the docId from search results.
+
+            Typical workflow:
+            1. Use list_labels to discover available document categories
+            2. Use search to find relevant documents (returns docId and content snippets)
+            3. Use fetch_content_chunk with docId to retrieve larger text sections
+
             Pagination: Use page_size (default 20, max 100) and start parameters to paginate results.
             For example, to get the next page of 20 results, increment start by 20.
 
@@ -146,6 +155,32 @@ fessLabel: {domain.labelFilter}"""
             """Retrieve progress information for a long-running operation."""
             return await self._handle_job_get({"jobId": job_id})
 
+        @self.mcp.tool(name=f"fess_{self.domain_id}_fetch_content_by_id")
+        async def fetch_content_by_id(doc_id: str) -> str:
+            """Fetch complete document content by ID.
+
+            This is a simplified alternative to fetch_content_chunk that retrieves the entire
+            document content in one call, without requiring offset/length parameters.
+
+            Use this tool when:
+            - You need the complete content of a document
+            - You don't want to manage offset/length calculations
+            - The document is not excessively large (respects maxChunkBytes server limit)
+
+            For very large documents that exceed maxChunkBytes, this tool will return content
+            up to the limit. Use fetch_content_chunk for granular control over which sections to retrieve.
+
+            Args:
+                doc_id: Document ID obtained from search results (required)
+
+            Returns:
+                JSON with:
+                - 'content': The full document content (up to maxChunkBytes limit)
+                - 'totalLength': Total document length in characters
+                - 'truncated': Boolean indicating if content was truncated due to size limits
+            """
+            return await self._handle_fetch_content_by_id({"docId": doc_id})
+
         @self.mcp.tool(name=f"fess_{self.domain_id}_fetch_content_chunk")
         async def fetch_content_chunk(
             doc_id: str,
@@ -154,16 +189,32 @@ fessLabel: {domain.labelFilter}"""
         ) -> str:
             """Fetch a specific chunk of document content.
 
-            Use this tool when read_doc_content truncates content (hasMore flag).
-            Retrieve additional segments by adjusting offset/length parameters.
+            Use this tool to retrieve larger text sections beyond the snippets returned by search.
+            This is essential when you need to read full chapters, sections, or complete documents.
+
+            When to use this tool:
+            - After search returns documents with truncated content snippets
+            - When you see a truncation notice indicating more content is available
+            - To read specific sections of a document using offset/length parameters
+
+            How to use:
+            1. Get the docId from search results
+            2. Start with offset=0 and length=maxChunkBytes to read from the beginning
+            3. Check the 'hasMore' flag in the response to see if more content exists
+            4. For subsequent chunks, increment offset by the previous length value
 
             Args:
-                doc_id: Document ID (same format as read_doc_content)
-                offset: Character offset into document (default 0)
-                length: Number of characters to return (default maxChunkBytes)
+                doc_id: Document ID obtained from search results (required)
+                offset: Character offset into document (default 0 - start from beginning)
+                length: Number of characters to return (default maxChunkBytes={maxChunkBytes})
 
             Returns:
-                JSON with 'content' field and 'hasMore' flag in structuredContent
+                JSON with:
+                - 'content': The requested text chunk
+                - 'hasMore': Boolean indicating if more content exists beyond this chunk
+                - 'offset': The starting position of this chunk
+                - 'length': Actual length of returned content
+                - 'totalLength': Total document length in characters
             """
             if length is None:
                 length = self.config.limits.maxChunkBytes
@@ -225,15 +276,22 @@ fessLabel: {domain.labelFilter}"""
                 if not url:
                     raise ValueError("Document has no URL")
 
+                # Pass doc_id for file:// URL fallback
                 content, _ = await self.fess_client.fetch_document_content(
-                    url, self.config.contentFetch
+                    url, self.config.contentFetch, doc_id=doc_id
                 )
 
                 max_chunk = self.config.limits.maxChunkBytes
                 if len(content) <= max_chunk:
                     return content
                 else:
-                    return content[:max_chunk]
+                    # Add truncation notice to help agents understand content is incomplete
+                    truncated = content[:max_chunk]
+                    truncation_notice = (
+                        f"\n\n[Content truncated at {max_chunk} characters. "
+                        f"Use fetch_content_chunk tool with docId='{doc_id}' to retrieve additional sections.]"
+                    )
+                    return truncated + truncation_notice
 
             except Exception as e:
                 logger.error(f"Failed to read resource: {e}")
@@ -454,53 +512,157 @@ fessLabel: {domain.labelFilter}"""
         """Handle fetch content chunk tool."""
         doc_id = arguments.get("docId")
         if not doc_id:
-            raise ValueError("docId parameter is required")
+            raise ValueError(
+                "docId parameter is required. "
+                "Please use the 'search' tool first to obtain a valid document ID."
+            )
 
         offset = arguments.get("offset", 0)
         if not isinstance(offset, int) or offset < 0:
-            raise ValueError(f"offset must be a non-negative integer, got {offset}")
+            raise ValueError(
+                f"offset must be a non-negative integer, got {offset}. "
+                "Use offset=0 to start reading from the beginning."
+            )
 
         length = arguments.get("length", self.config.limits.maxChunkBytes)
         if not isinstance(length, int) or length < 1:
-            raise ValueError(f"length must be a positive integer, got {length}")
+            raise ValueError(
+                f"length must be a positive integer, got {length}. "
+                f"Maximum recommended length is {self.config.limits.maxChunkBytes} bytes."
+            )
 
-        # Use default label if it's not "all"
-        label_filter = None if self.default_label == "all" else self.default_label
+        try:
+            # Use default label if it's not "all"
+            label_filter = None if self.default_label == "all" else self.default_label
 
-        # Get document metadata
-        result = await self.fess_client.search(
-            query=f"doc_id:{doc_id}",
-            label_filter=label_filter,
-            num=1,
-        )
+            # Get document metadata
+            result = await self.fess_client.search(
+                query=f"doc_id:{doc_id}",
+                label_filter=label_filter,
+                num=1,
+            )
 
-        docs = result.get("data", [])
-        if not docs:
-            raise ValueError(f"Document not found: {doc_id}")
+            docs = result.get("data", [])
+            if not docs:
+                raise ValueError(
+                    f"Document not found: {doc_id}. "
+                    "Please verify the document ID using the 'search' tool first."
+                )
 
-        doc = docs[0]
-        url = doc.get("url", "")
-        if not url:
-            raise ValueError("Document has no URL")
+            doc = docs[0]
+            url = doc.get("url", "")
+            if not url:
+                raise ValueError(
+                    f"Document {doc_id} has no URL. "
+                    "This document may not have accessible content."
+                )
 
-        # Fetch full document content
-        content, _ = await self.fess_client.fetch_document_content(
-            url, self.config.contentFetch
-        )
+            # Fetch full document content, passing doc_id for file:// URL fallback
+            content, _ = await self.fess_client.fetch_document_content(
+                url, self.config.contentFetch, doc_id=doc_id
+            )
 
-        # Slice content
-        chunk = content[offset : offset + length]
-        has_more = offset + length < len(content)
+            # Slice content
+            chunk = content[offset : offset + length]
+            has_more = offset + length < len(content)
 
-        result = {
-            "content": chunk,
-            "hasMore": has_more,
-            "offset": offset,
-            "length": len(chunk),
-            "totalLength": len(content),
-        }
+            result = {
+                "content": chunk,
+                "hasMore": has_more,
+                "offset": offset,
+                "length": len(chunk),
+                "totalLength": len(content),
+            }
 
-        return json.dumps(result, indent=2)
+            return json.dumps(result, indent=2)
+
+        except ValueError:
+            # Re-raise ValueError with improved context
+            raise
+        except Exception as e:
+            # Catch any other errors and provide helpful message
+            logger.error(f"Failed to fetch content chunk for {doc_id}: {e}")
+            raise ValueError(
+                f"fetch_content_chunk failed to load document {doc_id}. "
+                f"Error: {str(e)}. Please verify the document ID using 'search' tool, "
+                "or check offset/length parameters."
+            ) from e
+
+    async def _handle_fetch_content_by_id(self, arguments: dict[str, Any]) -> str:
+        """Handle fetch content by ID tool."""
+        doc_id = arguments.get("docId")
+        if not doc_id:
+            raise ValueError(
+                "docId parameter is required. "
+                "Please use the 'search' tool first to obtain a valid document ID."
+            )
+
+        try:
+            # Use default label if it's not "all"
+            label_filter = None if self.default_label == "all" else self.default_label
+
+            # Get document metadata
+            result = await self.fess_client.search(
+                query=f"doc_id:{doc_id}",
+                label_filter=label_filter,
+                num=1,
+            )
+
+            docs = result.get("data", [])
+            if not docs:
+                raise ValueError(
+                    f"Document not found: {doc_id}. "
+                    "Please verify the document ID using the 'search' tool first."
+                )
+
+            doc = docs[0]
+            url = doc.get("url", "")
+            if not url:
+                raise ValueError(
+                    f"Document {doc_id} has no URL. "
+                    "This document may not have accessible content."
+                )
+
+            # Fetch full document content, passing doc_id for file:// URL fallback
+            content, _ = await self.fess_client.fetch_document_content(
+                url, self.config.contentFetch, doc_id=doc_id
+            )
+
+            # Store original length before truncation
+            original_length = len(content)
+
+            # Check if content exceeds maxChunkBytes limit
+            max_bytes = self.config.limits.maxChunkBytes
+            truncated = len(content) > max_bytes
+
+            if truncated:
+                content = content[:max_bytes]
+
+            result = {
+                "content": content,
+                "totalLength": original_length,  # Full document length
+                "truncated": truncated,
+            }
+
+            if truncated:
+                result["message"] = (
+                    f"Content was truncated at {max_bytes} characters. "
+                    f"Full document is {original_length} characters. "
+                    "Use fetch_content_chunk tool to retrieve specific sections."
+                )
+
+            return json.dumps(result, indent=2)
+
+        except ValueError:
+            # Re-raise ValueError with improved context
+            raise
+        except Exception as e:
+            # Catch any other errors and provide helpful message
+            logger.error(f"Failed to fetch content by ID for {doc_id}: {e}")
+            raise ValueError(
+                f"fetch_content_by_id failed to load document {doc_id}. "
+                f"Error: {str(e)}. Please verify the document ID using 'search' tool."
+            ) from e
 
     async def run_stdio(self) -> None:
         """Run server with stdio transport."""
