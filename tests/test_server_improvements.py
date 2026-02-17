@@ -272,10 +272,11 @@ async def test_fetch_content_by_id_truncated(fess_server):
         result_json = await fess_server._handle_fetch_content_by_id({"docId": doc_id})
         result = json.loads(result_json)
 
-        assert len(result["content"]) == 100
-        assert result["totalLength"] == 100  # Total length of what was returned
+        assert len(result["content"]) == 100  # Returned content is truncated
+        assert result["totalLength"] == 200  # Total length of original document
         assert result["truncated"] is True
         assert "fetch_content_chunk" in result["message"]
+        assert "200 characters" in result["message"]  # Message shows full length
 
 
 @pytest.mark.asyncio

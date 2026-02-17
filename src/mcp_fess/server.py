@@ -628,6 +628,9 @@ fessLabel: {domain.labelFilter}"""
                 url, self.config.contentFetch, doc_id=doc_id
             )
 
+            # Store original length before truncation
+            original_length = len(content)
+
             # Check if content exceeds maxChunkBytes limit
             max_bytes = self.config.limits.maxChunkBytes
             truncated = len(content) > max_bytes
@@ -637,13 +640,14 @@ fessLabel: {domain.labelFilter}"""
 
             result = {
                 "content": content,
-                "totalLength": len(content),
+                "totalLength": original_length,  # Full document length
                 "truncated": truncated,
             }
 
             if truncated:
                 result["message"] = (
                     f"Content was truncated at {max_bytes} characters. "
+                    f"Full document is {original_length} characters. "
                     "Use fetch_content_chunk tool to retrieve specific sections."
                 )
 

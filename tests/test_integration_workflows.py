@@ -26,6 +26,20 @@ def fess_server(server_config):
 @pytest.mark.asyncio
 async def test_workflow_list_labels_search_fetch_chunk(fess_server):
     """Test typical agent workflow: list_labels → search → fetch_content_chunk."""
+    # Add "hr" and "tech" to configured labels
+    from mcp_fess.config import LabelDescriptor
+
+    fess_server.config.labels["hr"] = LabelDescriptor(
+        title="HR Documents",
+        description="Human Resources documents",
+        examples=["employee handbook"],
+    )
+    fess_server.config.labels["tech"] = LabelDescriptor(
+        title="Technical Documentation",
+        description="Technical documentation",
+        examples=["API docs"],
+    )
+
     # Step 1: List labels
     mock_labels_result = [
         {"value": "hr", "name": "HR Documents"},
@@ -39,20 +53,16 @@ async def test_workflow_list_labels_search_fetch_chunk(fess_server):
         labels_data = json.loads(labels_json)
 
         assert "labels" in labels_data
-        assert len(labels_data["labels"]) >= 1
-        # The "all" label should always be present
         label_values = [lbl["value"] for lbl in labels_data["labels"]]
+        # The "all" label should always be present (added by server init)
         assert "all" in label_values
+        # Configured labels should be present
+        assert "hr" in label_values
+        assert "tech" in label_values
+        # Should have at least 3 labels: all + hr + tech
+        assert len(labels_data["labels"]) >= 3
 
     # Step 2: Search for documents
-    # Add "hr" to configured labels to pass validation
-    from mcp_fess.config import LabelDescriptor
-    fess_server.config.labels["hr"] = LabelDescriptor(
-        title="HR Documents",
-        description="Human Resources documents",
-        examples=["employee handbook"],
-    )
-
     mock_search_result = {
         "data": [
             {
