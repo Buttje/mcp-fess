@@ -324,8 +324,8 @@ Retrieve additional segments by adjusting offset/length parameters to navigate t
 
 **Parameters:**
 - `doc_id` (required): Document ID (same format as read_doc_content resource)
-- `offset` (optional): Byte/character offset into document (default 0)
-- `length` (optional): Number of bytes/characters to return (default maxChunkBytes)
+- `offset` (optional): Character offset into document (default 0)
+- `length` (optional): Number of characters to return (default maxChunkBytes)
 
 **Returns:**
 JSON with:

@@ -159,8 +159,8 @@ fessLabel: {domain.labelFilter}"""
 
             Args:
                 doc_id: Document ID (same format as read_doc_content)
-                offset: Byte/character offset into document (default 0)
-                length: Number of bytes/characters to return (default maxChunkBytes)
+                offset: Character offset into document (default 0)
+                length: Number of characters to return (default maxChunkBytes)
 
             Returns:
                 JSON with 'content' field and 'hasMore' flag in structuredContent
@@ -458,11 +458,11 @@ fessLabel: {domain.labelFilter}"""
 
         offset = arguments.get("offset", 0)
         if not isinstance(offset, int) or offset < 0:
-            raise ValueError("offset must be a non-negative integer")
+            raise ValueError(f"offset must be a non-negative integer, got {offset}")
 
         length = arguments.get("length", self.config.limits.maxChunkBytes)
         if not isinstance(length, int) or length < 1:
-            raise ValueError("length must be a positive integer")
+            raise ValueError(f"length must be a positive integer, got {length}")
 
         # Use default label if it's not "all"
         label_filter = None if self.default_label == "all" else self.default_label

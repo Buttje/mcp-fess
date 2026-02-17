@@ -549,14 +549,14 @@ async def test_handle_fetch_content_chunk_missing_doc_id(fess_server):
 @pytest.mark.asyncio
 async def test_handle_fetch_content_chunk_invalid_offset(fess_server):
     """Test fetch_content_chunk handler with invalid offset."""
-    with pytest.raises(ValueError, match="offset must be a non-negative integer"):
+    with pytest.raises(ValueError, match="offset must be a non-negative integer, got -1"):
         await fess_server._handle_fetch_content_chunk({"docId": "test", "offset": -1})
 
 
 @pytest.mark.asyncio
 async def test_handle_fetch_content_chunk_invalid_length(fess_server):
     """Test fetch_content_chunk handler with invalid length."""
-    with pytest.raises(ValueError, match="length must be a positive integer"):
+    with pytest.raises(ValueError, match="length must be a positive integer, got 0"):
         await fess_server._handle_fetch_content_chunk({"docId": "test", "offset": 0, "length": 0})
 
 
