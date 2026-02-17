@@ -71,13 +71,16 @@ fessLabel: {domain.labelFilter}"""
             Use this tool whenever you need factual internal information; don't guess—search first.
             If unsure which label to use, call the list_labels tool first.
 
+            Pagination: Use page_size (default 20, max 100) and start parameters to paginate results.
+            For example, to get the next page of 20 results, increment start by 20.
+
             Args:
                 query: Search term
                 label: Label value to scope the search (default uses configured defaultLabel).
                        Use 'all' to search across the entire index without label filtering.
                        Call list_labels to see available labels.
-                page_size: Number of results (default 20, max 100)
-                start: Starting index (default 0)
+                page_size: Number of results per page (default 20, max 100)
+                start: Starting index for pagination (default 0)
                 sort: Sort order
                 lang: Search language
                 include_fields: Fields to include in results
@@ -143,6 +146,31 @@ fessLabel: {domain.labelFilter}"""
             """Retrieve progress information for a long-running operation."""
             return await self._handle_job_get({"jobId": job_id})
 
+        @self.mcp.tool(name=f"fess_{self.domain_id}_fetch_content_chunk")
+        async def fetch_content_chunk(
+            doc_id: str,
+            offset: int = 0,
+            length: int | None = None,
+        ) -> str:
+            """Fetch a specific chunk of document content.
+
+            Use this tool when read_doc_content truncates content (hasMore flag).
+            Retrieve additional segments by adjusting offset/length parameters.
+
+            Args:
+                doc_id: Document ID (same format as read_doc_content)
+                offset: Byte/character offset into document (default 0)
+                length: Number of bytes/characters to return (default maxChunkBytes)
+
+            Returns:
+                JSON with 'content' field and 'hasMore' flag in structuredContent
+            """
+            if length is None:
+                length = self.config.limits.maxChunkBytes
+            return await self._handle_fetch_content_chunk(
+                {"docId": doc_id, "offset": offset, "length": length}
+            )
+
     def _setup_resources(self) -> None:
         """Set up MCP resources using FastMCP decorators."""
 
@@ -172,7 +200,12 @@ fessLabel: {domain.labelFilter}"""
 
         @self.mcp.resource(f"fess://{self.domain_id}/doc/{{doc_id}}/content")
         async def read_doc_content(doc_id: str) -> str:
-            """Full document content."""
+            """Document content (first maxChunkBytes only).
+
+            Returns the first maxChunkBytes of document content.
+            For documents longer than maxChunkBytes, use the fetch_content_chunk tool
+            to retrieve additional segments.
+            """
             try:
                 # Use default label if it's not "all"
                 label_filter = None if self.default_label == "all" else self.default_label
@@ -262,7 +295,11 @@ fessLabel: {domain.labelFilter}"""
         page_size = arguments.get("pageSize", 20)
         if not isinstance(page_size, int) or page_size < 1:
             raise ValueError("pageSize must be a positive integer")
-        page_size = min(page_size, self.config.limits.maxPageSize)
+        if page_size > self.config.limits.maxPageSize:
+            raise ValueError(
+                f"pageSize must be between 1 and {self.config.limits.maxPageSize}, "
+                f"got {page_size}"
+            )
 
         start = arguments.get("start", 0)
         if not isinstance(start, int) or start < 0:
@@ -412,6 +449,58 @@ fessLabel: {domain.labelFilter}"""
         job = self.jobs[job_id]
 
         return json.dumps(job, indent=2)
+
+    async def _handle_fetch_content_chunk(self, arguments: dict[str, Any]) -> str:
+        """Handle fetch content chunk tool."""
+        doc_id = arguments.get("docId")
+        if not doc_id:
+            raise ValueError("docId parameter is required")
+
+        offset = arguments.get("offset", 0)
+        if not isinstance(offset, int) or offset < 0:
+            raise ValueError("offset must be a non-negative integer")
+
+        length = arguments.get("length", self.config.limits.maxChunkBytes)
+        if not isinstance(length, int) or length < 1:
+            raise ValueError("length must be a positive integer")
+
+        # Use default label if it's not "all"
+        label_filter = None if self.default_label == "all" else self.default_label
+
+        # Get document metadata
+        result = await self.fess_client.search(
+            query=f"doc_id:{doc_id}",
+            label_filter=label_filter,
+            num=1,
+        )
+
+        docs = result.get("data", [])
+        if not docs:
+            raise ValueError(f"Document not found: {doc_id}")
+
+        doc = docs[0]
+        url = doc.get("url", "")
+        if not url:
+            raise ValueError("Document has no URL")
+
+        # Fetch full document content
+        content, _ = await self.fess_client.fetch_document_content(
+            url, self.config.contentFetch
+        )
+
+        # Slice content
+        chunk = content[offset : offset + length]
+        has_more = offset + length < len(content)
+
+        result = {
+            "content": chunk,
+            "hasMore": has_more,
+            "offset": offset,
+            "length": len(chunk),
+            "totalLength": len(content),
+        }
+
+        return json.dumps(result, indent=2)
 
     async def run_stdio(self) -> None:
         """Run server with stdio transport."""
