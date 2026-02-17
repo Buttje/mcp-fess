@@ -16,7 +16,54 @@ An MCP (Model Context Protocol) bridge server for Fess search engine, enabling L
 
 ## Installation
 
-### From Source
+### Quick Install (Recommended)
+
+The easiest way to install MCP-Fess is using the automated installer:
+
+```bash
+git clone https://github.com/Buttje/mcp-fess.git
+cd mcp-fess
+python3 install.py
+```
+
+This will:
+- Detect your operating system (Windows 10/11, Linux Ubuntu/Red Hat/Fedora)
+- Create a virtual environment (`./venv`)
+- Install all required dependencies
+- Create an OS-specific launcher script (`start-mcp-fess.sh` or `start-mcp-fess.bat`)
+- Generate an initial configuration file at `~/.mcp-feiss/config.json`
+
+After installation, you can run the server directly:
+
+**On Linux/macOS:**
+```bash
+./start-mcp-fess.sh
+```
+
+**On Windows:**
+```cmd
+start-mcp-fess.bat
+```
+
+#### Installer Options
+
+```bash
+# Custom virtual environment location
+python3 install.py --venv-dir /path/to/venv
+
+# Custom configuration directory
+python3 install.py --config-dir /path/to/config
+
+# Skip creating initial configuration
+python3 install.py --no-config
+
+# Show help
+python3 install.py --help
+```
+
+### Manual Installation (From Source)
+
+If you prefer manual installation:
 
 ```bash
 git clone https://github.com/Buttje/mcp-fess.git
