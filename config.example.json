@@ -36,7 +36,7 @@
   },
   "limits": {
     "maxPageSize": 100,
-    "maxChunkBytes": 262144,
+    "maxChunkBytes": 1048576,
     "maxInFlightRequests": 32
   },
   "logging": {
