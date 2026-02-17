@@ -47,7 +47,7 @@ class LimitsConfig(BaseModel):
     """Limits configuration."""
 
     maxPageSize: int = 100
-    maxChunkBytes: int = 262144
+    maxChunkBytes: int = 1048576  # 1 MiB - allows agents to retrieve larger sections
     maxInFlightRequests: int = 32
 
 

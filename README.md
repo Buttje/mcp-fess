@@ -135,7 +135,7 @@ For production use, you should provide explicit domain information and configure
   },
   "limits": {
     "maxPageSize": 100,
-    "maxChunkBytes": 262144,
+    "maxChunkBytes": 1048576,
     "maxInFlightRequests": 32
   },
   "logging": {
@@ -176,6 +176,9 @@ For production use, you should provide explicit domain information and configure
 - **httpTransport**: HTTP transport settings (for HTTP mode)
 - **timeouts**: Request timeout configurations
 - **limits**: Resource limits for requests and responses
+  - `maxPageSize`: Maximum number of search results per page (default 100)
+  - `maxChunkBytes`: Maximum bytes returned by read_doc_content and fetch_content_chunk (default 1048576 = 1 MiB)
+  - `maxInFlightRequests`: Maximum concurrent requests (default 32)
 - **logging**: Logging level and retention settings
 - **security**: Authentication and network security settings
 - **contentFetch**: Document content fetching configuration
@@ -314,11 +317,42 @@ Query status of long-running operations.
 **Parameters:**
 - `jobId` (required): Job identifier
 
+### 7. Fetch Content Chunk Tool
+Fetch a specific chunk of document content. **Use this when read_doc_content truncates content (hasMore flag).**
+
+Retrieve additional segments by adjusting offset/length parameters to navigate through the document.
+
+**Parameters:**
+- `doc_id` (required): Document ID (same format as read_doc_content resource)
+- `offset` (optional): Character offset into document (default 0)
+- `length` (optional): Number of characters to return (default maxChunkBytes)
+
+**Returns:**
+JSON with:
+- `content`: The requested chunk of document content
+- `hasMore`: Boolean flag indicating if more content is available
+- `offset`: The offset used
+- `length`: Actual length of returned chunk
+- `totalLength`: Total length of the document
+
+**Example:**
+```json
+{
+  "content": "Document content...",
+  "hasMore": true,
+  "offset": 0,
+  "length": 1048576,
+  "totalLength": 2500000
+}
+```
+
+To retrieve the next chunk, use `offset: 1048576` with the same `length`.
+
 ## MCP Resources
 
 Documents and labels are exposed as resources with URIs:
 - `fess://<domain_id>/doc/<doc_id>` - Document metadata
-- `fess://<domain_id>/doc/<doc_id>/content` - Full document content
+- `fess://<domain_id>/doc/<doc_id>/content` - Document content (first maxChunkBytes bytes only; use fetch_content_chunk tool for additional segments)
 - `fess://<domain_id>/labels` - Available labels catalog
 
 Resources include the Knowledge Domain block in descriptions, enabling LLMs to understand the domain context.
@@ -331,6 +365,7 @@ When using MCP-Fess with LLM agents:
 2. **Prefer Specific Labels**: Use specific labels (e.g., `"hr"`, `"engineering"`) over `"all"` when the user intent is clear, for more focused results
 3. **Search First**: Always search for factual information rather than guessing or relying on general knowledge
 4. **Progressive Refinement**: Start with broader searches (`label="all"`) and refine with specific labels based on initial results
+5. **Large Documents**: Use the `fetch_content_chunk` tool to retrieve additional content when documents exceed maxChunkBytes (default 1 MiB)
 
 ## Label Configuration Guide
 
