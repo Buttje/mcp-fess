@@ -12,13 +12,12 @@ This script:
 """
 
 import argparse
-import os
+import json
 import platform
 import subprocess
 import sys
-import json
 from pathlib import Path
-from typing import Optional
+
 
 # Colors for terminal output
 class Colors:
@@ -56,31 +55,31 @@ def print_header(message: str) -> None:
 def detect_os() -> tuple[str, str]:
     """
     Detect the operating system.
-    
+
     Returns:
         tuple: (os_type, os_name) where os_type is 'windows' or 'linux',
                and os_name is more specific version info
     """
     system = platform.system().lower()
-    
+
     if system == "windows":
         # Try to detect Windows version
-        version = platform.version()
+        platform.version()
         release = platform.release()
-        
+
         if release == "10":
             return ("windows", "Windows 10")
         elif release == "11":
             return ("windows", "Windows 11")
         else:
             return ("windows", f"Windows {release}")
-    
+
     elif system == "linux":
         # Try to detect Linux distribution
         try:
-            with open("/etc/os-release", "r") as f:
+            with Path("/etc/os-release").open() as f:
                 os_release = f.read()
-                
+
             if "ubuntu" in os_release.lower():
                 return ("linux", "Ubuntu")
             elif "red hat" in os_release.lower() or "rhel" in os_release.lower():
@@ -91,17 +90,17 @@ def detect_os() -> tuple[str, str]:
                 return ("linux", "Linux (Unknown Distribution)")
         except FileNotFoundError:
             return ("linux", "Linux (Unknown Distribution)")
-    
+
     elif system == "darwin":
         return ("macos", "macOS")
-    
+
     else:
         return ("unknown", f"Unknown ({system})")
 
 def check_python_version() -> bool:
     """
     Check if Python version meets requirements (>=3.10).
-    
+
     Returns:
         bool: True if version is sufficient
     """
@@ -114,10 +113,10 @@ def check_python_version() -> bool:
 def create_venv(venv_path: Path) -> bool:
     """
     Create a virtual environment.
-    
+
     Args:
         venv_path: Path where the venv should be created
-        
+
     Returns:
         bool: True if successful
     """
@@ -133,11 +132,11 @@ def create_venv(venv_path: Path) -> bool:
 def get_venv_python(venv_path: Path, os_type: str) -> Path:
     """
     Get the path to Python executable in the venv.
-    
+
     Args:
         venv_path: Path to the virtual environment
         os_type: Operating system type ('windows' or 'linux')
-        
+
     Returns:
         Path to Python executable
     """
@@ -149,11 +148,11 @@ def get_venv_python(venv_path: Path, os_type: str) -> Path:
 def get_venv_pip(venv_path: Path, os_type: str) -> Path:
     """
     Get the path to pip executable in the venv.
-    
+
     Args:
         venv_path: Path to the virtual environment
         os_type: Operating system type ('windows' or 'linux')
-        
+
     Returns:
         Path to pip executable
     """
@@ -165,11 +164,11 @@ def get_venv_pip(venv_path: Path, os_type: str) -> Path:
 def upgrade_pip(venv_path: Path, os_type: str) -> bool:
     """
     Upgrade pip in the virtual environment.
-    
+
     Args:
         venv_path: Path to the virtual environment
         os_type: Operating system type
-        
+
     Returns:
         bool: True if successful
     """
@@ -190,25 +189,25 @@ def upgrade_pip(venv_path: Path, os_type: str) -> bool:
 def install_dependencies(venv_path: Path, os_type: str, project_root: Path) -> bool:
     """
     Install project dependencies in the virtual environment.
-    
+
     Args:
         venv_path: Path to the virtual environment
         os_type: Operating system type
         project_root: Root directory of the project
-        
+
     Returns:
         bool: True if successful
     """
     try:
         pip_exe = get_venv_pip(venv_path, os_type)
         print_info("Installing mcp-fess and dependencies...")
-        
+
         # Install in editable mode with the project
         subprocess.run(
             [str(pip_exe), "install", "-e", str(project_root)],
             check=True
         )
-        
+
         print_success("Dependencies installed successfully")
         return True
     except subprocess.CalledProcessError as e:
@@ -218,28 +217,28 @@ def install_dependencies(venv_path: Path, os_type: str, project_root: Path) -> b
 def create_launcher_windows(venv_path: Path, install_dir: Path) -> bool:
     """
     Create Windows launcher script (.bat file).
-    
+
     Args:
         venv_path: Path to the virtual environment
         install_dir: Installation directory
-        
+
     Returns:
         bool: True if successful
     """
     try:
         launcher_path = install_dir / "start-mcp-fess.bat"
         python_exe = venv_path / "Scripts" / "python.exe"
-        
+
         launcher_content = f"""@echo off
 REM MCP-Fess Server Launcher for Windows
 REM This script starts the MCP-Fess server without requiring manual venv activation
 
 "{python_exe}" -m mcp_fess %*
 """
-        
-        with open(launcher_path, "w") as f:
+
+        with launcher_path.open("w") as f:
             f.write(launcher_content)
-        
+
         print_success(f"Windows launcher created: {launcher_path}")
         print_info(f"You can now run the server with: {launcher_path}")
         return True
@@ -250,31 +249,31 @@ REM This script starts the MCP-Fess server without requiring manual venv activat
 def create_launcher_unix(venv_path: Path, install_dir: Path) -> bool:
     """
     Create Unix/Linux launcher script.
-    
+
     Args:
         venv_path: Path to the virtual environment
         install_dir: Installation directory
-        
+
     Returns:
         bool: True if successful
     """
     try:
         launcher_path = install_dir / "start-mcp-fess.sh"
         python_exe = venv_path / "bin" / "python"
-        
+
         launcher_content = f"""#!/bin/bash
 # MCP-Fess Server Launcher for Linux/Unix
 # This script starts the MCP-Fess server without requiring manual venv activation
 
 "{python_exe}" -m mcp_fess "$@"
 """
-        
-        with open(launcher_path, "w") as f:
+
+        with launcher_path.open("w") as f:
             f.write(launcher_content)
-        
+
         # Make the script executable
-        os.chmod(launcher_path, 0o755)
-        
+        launcher_path.chmod(0o755)
+
         print_success(f"Unix launcher created: {launcher_path}")
         print_info(f"You can now run the server with: ./{launcher_path}")
         return True
@@ -282,23 +281,23 @@ def create_launcher_unix(venv_path: Path, install_dir: Path) -> bool:
         print_error(f"Failed to create Unix launcher: {e}")
         return False
 
-def create_initial_config(config_dir: Optional[Path] = None) -> bool:
+def create_initial_config(config_dir: Path | None = None) -> bool:
     """
     Create initial configuration file.
-    
+
     Args:
         config_dir: Optional custom config directory. If None, uses default ~/.mcp-feiss/
-        
+
     Returns:
         bool: True if successful
     """
     try:
         if config_dir is None:
             config_dir = Path.home() / ".mcp-feiss"
-        
+
         config_dir.mkdir(parents=True, exist_ok=True)
         config_path = config_dir / "config.json"
-        
+
         # Check if config already exists
         if config_path.exists():
             print_warning(f"Configuration file already exists at {config_path}")
@@ -306,7 +305,7 @@ def create_initial_config(config_dir: Optional[Path] = None) -> bool:
             if response != 'y':
                 print_info("Keeping existing configuration file")
                 return True
-        
+
         # Create minimal initial configuration
         initial_config = {
             "fessBaseUrl": "http://localhost:8080",
@@ -329,10 +328,10 @@ def create_initial_config(config_dir: Optional[Path] = None) -> bool:
                 "retainDays": 7
             }
         }
-        
-        with open(config_path, "w") as f:
+
+        with config_path.open("w") as f:
             json.dump(initial_config, f, indent=2)
-        
+
         print_success(f"Initial configuration created at {config_path}")
         print_info("Please edit this file to configure your Fess server URL and other settings")
         return True
@@ -362,44 +361,44 @@ def main() -> int:
         action="store_true",
         help="Skip creating initial configuration file"
     )
-    
+
     args = parser.parse_args()
-    
+
     # Print header
     print_header("MCP-Fess Server Installer")
-    
+
     # Detect OS
     os_type, os_name = detect_os()
     print_info(f"Detected operating system: {os_name}")
-    
+
     if os_type == "unknown":
         print_error("Unsupported operating system")
         return 1
-    
+
     # Check Python version
     if not check_python_version():
         return 1
-    
+
     print_success(f"Python version: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
-    
+
     # Determine installation paths
     project_root = Path(__file__).parent.absolute()
     venv_path = args.venv_dir if args.venv_dir else project_root / "venv"
-    
+
     print_info(f"Project root: {project_root}")
     print_info(f"Virtual environment will be created at: {venv_path}")
-    
+
     # Create virtual environment
     if not create_venv(venv_path):
         return 1
-    
+
     # Upgrade pip
     upgrade_pip(venv_path, os_type)
-    
+
     # Install dependencies
     if not install_dependencies(venv_path, os_type, project_root):
         return 1
-    
+
     # Create launcher script
     print_header("Creating Launcher Script")
     if os_type == "windows":
@@ -408,19 +407,19 @@ def main() -> int:
     else:
         if not create_launcher_unix(venv_path, project_root):
             return 1
-    
+
     # Create initial configuration
     if not args.no_config:
         print_header("Creating Initial Configuration")
         create_initial_config(args.config_dir)
-    
+
     # Print final instructions
     print_header("Installation Complete!")
     print_success("MCP-Fess server has been installed successfully")
     print()
     print("Next steps:")
-    print(f"  1. Edit the configuration file at ~/.mcp-feiss/config.json")
-    print(f"     (Update the fessBaseUrl to point to your Fess server)")
+    print("  1. Edit the configuration file at ~/.mcp-feiss/config.json")
+    print("     (Update the fessBaseUrl to point to your Fess server)")
     print()
     if os_type == "windows":
         print(f"  2. Run the server: {project_root / 'start-mcp-fess.bat'}")
@@ -431,7 +430,7 @@ def main() -> int:
     print()
     print("For more information, see README.md")
     print()
-    
+
     return 0
 
 if __name__ == "__main__":
