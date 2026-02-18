@@ -534,3 +534,191 @@ def test_server_default_label_backward_compat(test_config):
     server = FessServer(test_config)
     # Should use labelFilter when defaultLabel is default
     assert server.default_label == "test_label"
+
+
+# Tests for fetch_content_chunk tool
+
+
+@pytest.mark.asyncio
+async def test_handle_fetch_content_chunk_missing_doc_id(fess_server):
+    """Test fetch_content_chunk handler with missing docId."""
+    with pytest.raises(ValueError, match="docId parameter is required"):
+        await fess_server._handle_fetch_content_chunk({})
+
+
+@pytest.mark.asyncio
+async def test_handle_fetch_content_chunk_invalid_offset(fess_server):
+    """Test fetch_content_chunk handler with invalid offset."""
+    with pytest.raises(ValueError, match="offset must be a non-negative integer, got -1"):
+        await fess_server._handle_fetch_content_chunk({"docId": "test", "offset": -1})
+
+
+@pytest.mark.asyncio
+async def test_handle_fetch_content_chunk_invalid_length(fess_server):
+    """Test fetch_content_chunk handler with invalid length."""
+    with pytest.raises(ValueError, match="length must be a positive integer, got 0"):
+        await fess_server._handle_fetch_content_chunk({"docId": "test", "offset": 0, "length": 0})
+
+
+@pytest.mark.asyncio
+async def test_handle_fetch_content_chunk_first_chunk(fess_server):
+    """Test fetch_content_chunk handler for first chunk."""
+    mock_search_result = {
+        "data": [{"doc_id": "test_doc", "url": "http://example.com/doc.html"}]
+    }
+    test_content = "A" * 2000
+
+    with (
+        patch.object(
+            fess_server.fess_client, "search", new=AsyncMock(return_value=mock_search_result)
+        ),
+        patch.object(
+            fess_server.fess_client,
+            "fetch_document_content",
+            new=AsyncMock(return_value=(test_content, "text/html")),
+        ),
+    ):
+        result = await fess_server._handle_fetch_content_chunk(
+            {"docId": "test_doc", "offset": 0, "length": 1000}
+        )
+        assert isinstance(result, str)
+        assert '"hasMore": true' in result
+        assert '"offset": 0' in result
+        assert '"length": 1000' in result
+        assert '"totalLength": 2000' in result
+
+
+@pytest.mark.asyncio
+async def test_handle_fetch_content_chunk_middle_chunk(fess_server):
+    """Test fetch_content_chunk handler for middle chunk."""
+    mock_search_result = {
+        "data": [{"doc_id": "test_doc", "url": "http://example.com/doc.html"}]
+    }
+    test_content = "A" * 3000
+
+    with (
+        patch.object(
+            fess_server.fess_client, "search", new=AsyncMock(return_value=mock_search_result)
+        ),
+        patch.object(
+            fess_server.fess_client,
+            "fetch_document_content",
+            new=AsyncMock(return_value=(test_content, "text/html")),
+        ),
+    ):
+        result = await fess_server._handle_fetch_content_chunk(
+            {"docId": "test_doc", "offset": 1000, "length": 1000}
+        )
+        assert isinstance(result, str)
+        assert '"hasMore": true' in result
+        assert '"offset": 1000' in result
+
+
+@pytest.mark.asyncio
+async def test_handle_fetch_content_chunk_last_chunk(fess_server):
+    """Test fetch_content_chunk handler for last chunk."""
+    mock_search_result = {
+        "data": [{"doc_id": "test_doc", "url": "http://example.com/doc.html"}]
+    }
+    test_content = "A" * 1500
+
+    with (
+        patch.object(
+            fess_server.fess_client, "search", new=AsyncMock(return_value=mock_search_result)
+        ),
+        patch.object(
+            fess_server.fess_client,
+            "fetch_document_content",
+            new=AsyncMock(return_value=(test_content, "text/html")),
+        ),
+    ):
+        result = await fess_server._handle_fetch_content_chunk(
+            {"docId": "test_doc", "offset": 1000, "length": 1000}
+        )
+        assert isinstance(result, str)
+        assert '"hasMore": false' in result
+        assert '"length": 500' in result  # Only 500 bytes remaining
+
+
+@pytest.mark.asyncio
+async def test_handle_fetch_content_chunk_exact_end(fess_server):
+    """Test fetch_content_chunk handler at exact end of content."""
+    mock_search_result = {
+        "data": [{"doc_id": "test_doc", "url": "http://example.com/doc.html"}]
+    }
+    test_content = "A" * 1000
+
+    with (
+        patch.object(
+            fess_server.fess_client, "search", new=AsyncMock(return_value=mock_search_result)
+        ),
+        patch.object(
+            fess_server.fess_client,
+            "fetch_document_content",
+            new=AsyncMock(return_value=(test_content, "text/html")),
+        ),
+    ):
+        result = await fess_server._handle_fetch_content_chunk(
+            {"docId": "test_doc", "offset": 0, "length": 1000}
+        )
+        assert isinstance(result, str)
+        assert '"hasMore": false' in result
+
+
+@pytest.mark.asyncio
+async def test_handle_fetch_content_chunk_doc_not_found(fess_server):
+    """Test fetch_content_chunk handler with non-existent document."""
+    mock_search_result = {"data": []}
+
+    with patch.object(
+        fess_server.fess_client, "search", new=AsyncMock(return_value=mock_search_result)
+    ):
+        with pytest.raises(ValueError, match="Document not found"):
+            await fess_server._handle_fetch_content_chunk({"docId": "nonexistent"})
+
+
+@pytest.mark.asyncio
+async def test_handle_fetch_content_chunk_no_url(fess_server):
+    """Test fetch_content_chunk handler with document without URL."""
+    mock_search_result = {"data": [{"doc_id": "test_doc"}]}
+
+    with patch.object(
+        fess_server.fess_client, "search", new=AsyncMock(return_value=mock_search_result)
+    ):
+        with pytest.raises(ValueError, match="has no URL.*may not have accessible content"):
+            await fess_server._handle_fetch_content_chunk({"docId": "test_doc"})
+
+
+@pytest.mark.asyncio
+async def test_handle_fetch_content_chunk_default_length(fess_server):
+    """Test fetch_content_chunk handler uses default length from config."""
+    mock_search_result = {
+        "data": [{"doc_id": "test_doc", "url": "http://example.com/doc.html"}]
+    }
+    test_content = "A" * 2000000  # 2MB content
+
+    with (
+        patch.object(
+            fess_server.fess_client, "search", new=AsyncMock(return_value=mock_search_result)
+        ),
+        patch.object(
+            fess_server.fess_client,
+            "fetch_document_content",
+            new=AsyncMock(return_value=(test_content, "text/html")),
+        ),
+    ):
+        # Call without explicit length
+        result = await fess_server._handle_fetch_content_chunk({"docId": "test_doc", "offset": 0})
+        assert isinstance(result, str)
+        # Should use maxChunkBytes from config (1048576 = 1MB)
+        assert '"length": 1048576' in result
+
+
+@pytest.mark.asyncio
+async def test_handle_search_pagesize_exceeds_max(fess_server):
+    """Test search handler with pageSize exceeding maxPageSize."""
+    with pytest.raises(
+        ValueError, match="pageSize must be between 1 and 100"
+    ):
+        await fess_server._handle_search({"query": "test", "pageSize": 101})
+

@@ -90,7 +90,7 @@ def test_at_cfg_003_directory_creation(monkeypatch, tmp_path, valid_config_dict)
     The server should create the log directory automatically.
     """
     monkeypatch.setenv("HOME", str(tmp_path))
-    log_dir = tmp_path / ".mcp-feiss" / "log"
+    log_dir = tmp_path / ".mcp-fess" / "log"
     assert not log_dir.exists()
 
     # Create log directory
@@ -258,10 +258,9 @@ async def test_at_tool_003_search_pagination(valid_config):
     await server._handle_search({"query": "test", "pageSize": 30})
     assert server.fess_client.search.call_args[1]["num"] == 30
 
-    # Test exceeding max page size - should be capped at 100, not raise an error
-    await server._handle_search({"query": "test", "pageSize": 150})
-    # pageSize gets capped to maxPageSize (100)
-    assert server.fess_client.search.call_args[1]["num"] == 100
+    # Test exceeding max page size - should raise an error with clear message
+    with pytest.raises(ValueError, match="pageSize must be between 1 and 100"):
+        await server._handle_search({"query": "test", "pageSize": 150})
 
     await server.cleanup()
 

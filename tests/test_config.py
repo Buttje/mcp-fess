@@ -67,7 +67,7 @@ def test_limits_config_defaults():
     """Test limits configuration defaults."""
     config = LimitsConfig()
     assert config.maxPageSize == 100
-    assert config.maxChunkBytes == 262144
+    assert config.maxChunkBytes == 1048576  # Updated to 1 MiB
     assert config.maxInFlightRequests == 32
 
 

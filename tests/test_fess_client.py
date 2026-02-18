@@ -128,7 +128,7 @@ async def test_fetch_document_content_invalid_scheme(fess_client):
     """Test content fetching with invalid scheme."""
     config = ContentFetchConfig(allowedSchemes=["http", "https"])
 
-    with pytest.raises(ValueError, match="Scheme ftp not allowed"):
+    with pytest.raises(ValueError, match="Scheme 'ftp' is not allowed"):
         await fess_client.fetch_document_content("ftp://example.com", config)
 
 
