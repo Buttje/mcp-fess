@@ -28,13 +28,11 @@ pip install -e .
 
 - Python 3.10 or higher
 - A running Fess server instance
-
 ## Configuration
 
-Create a configuration file at `~/.mcp-feiss/config.json`.
+Create a configuration file at `~/.mcp-fess/config.json`.
 
 ### Minimal Configuration
-
 The simplest configuration requires only the Fess server URL:
 
 ```json
