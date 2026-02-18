@@ -184,8 +184,8 @@ async def test_fetch_document_content_file_url_api_failure(
 async def test_fetch_document_content_improved_error_for_invalid_scheme(
     fess_client, content_fetch_config
 ):
-    """Test that invalid scheme error message is improved."""
-    with pytest.raises(ValueError, match="Scheme 'ftp' is not allowed.*Allowed schemes"):
+    """Test that document ID is required for content retrieval."""
+    with pytest.raises(ValueError, match="Document ID is required"):
         await fess_client.fetch_document_content(
             "ftp://example.com/file.txt", content_fetch_config
         )
@@ -193,24 +193,26 @@ async def test_fetch_document_content_improved_error_for_invalid_scheme(
 
 @pytest.mark.asyncio
 async def test_fetch_document_content_http_still_works(fess_client, content_fetch_config):
-    """Test that regular HTTP URL fetching still works normally."""
+    """Test that content retrieval works with doc_id (index-only)."""
     http_url = "http://example.com/document.html"
-    html_content = b"<html><body>Test content</body></html>"
+    doc_id = "test_doc_123"
+    
+    # Mock the search method to return document with content
+    mock_search_result = {
+        "data": [
+            {
+                "doc_id": doc_id,
+                "content": "Test content from index",
+                "title": "Test Document",
+            }
+        ]
+    }
 
-    mock_response = MagicMock()
-    mock_response.headers = {"content-type": "text/html"}
-    mock_response.content = html_content
-    mock_response.raise_for_status = MagicMock()
-
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_client = MagicMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-        mock_client_class.return_value = mock_client
-
+    with patch.object(
+        fess_client, "search", new=AsyncMock(return_value=mock_search_result)
+    ):
         content, content_hash = await fess_client.fetch_document_content(
-            http_url, content_fetch_config
+            http_url, content_fetch_config, doc_id=doc_id
         )
 
         assert "Test content" in content
