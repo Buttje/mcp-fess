@@ -53,6 +53,23 @@ name: {domain.name}
 {desc}
 fessLabel: {domain.labelFilter}"""
 
+    def _descriptor_workflow(self) -> str:
+        """Generate the shared efficient agent workflow text."""
+        return """**Efficient agent workflow:**
+
+1. (Optional) Call `list_labels` to pick a label scope if you need to restrict the search space.
+2. Call `search` to get relevant hits and collect `doc_id`s.
+3. Call `fetch_content_chunk` (preferred) or `fetch_content_by_id` to read extracted UTF-8 text evidence from the index.
+4. Refine the query using evidence; optionally use `suggest` and `popular_words` to expand/pivot."""
+
+    def _descriptor_text_source(self) -> str:
+        """Generate the text source explanation."""
+        return "**Text source:** Index fields only (priority: `content` → `body` → `digest`). No origin URL fetch."
+
+    def _descriptor_limits(self) -> str:
+        """Generate the limits description with actual configured values."""
+        return f"**Maximum chunk size:** {self.config.limits.maxChunkBytes} bytes."
+
     def _setup_tools(self) -> None:
         """Set up MCP tools using FastMCP decorators."""
 
@@ -66,34 +83,6 @@ fessLabel: {domain.labelFilter}"""
             lang: str | None = None,
             include_fields: list[str] | None = None,
         ) -> str:
-            """Search documents in Fess.
-
-            Use this tool whenever you need factual internal information; don't guess—search first.
-            If unsure which label to use, call the list_labels tool first.
-
-            IMPORTANT: The 'content' fields in search results contain only the first {maxChunkBytes}
-            characters as snippets. To read longer sections or full chapters of a document, use the
-            fetch_content_chunk tool with the docId from search results.
-
-            Typical workflow:
-            1. Use list_labels to discover available document categories
-            2. Use search to find relevant documents (returns docId and content snippets)
-            3. Use fetch_content_chunk with docId to retrieve larger text sections
-
-            Pagination: Use page_size (default 20, max 100) and start parameters to paginate results.
-            For example, to get the next page of 20 results, increment start by 20.
-
-            Args:
-                query: Search term
-                label: Label value to scope the search (default uses configured defaultLabel).
-                       Use 'all' to search across the entire index without label filtering.
-                       Call list_labels to see available labels.
-                page_size: Number of results per page (default 20, max 100)
-                start: Starting index for pagination (default 0)
-                sort: Sort order
-                lang: Search language
-                include_fields: Fields to include in results
-            """
             return await self._handle_search(
                 {
                     "query": query,
@@ -106,6 +95,27 @@ fessLabel: {domain.labelFilter}"""
                 }
             )
 
+        # Set dynamic descriptor for search tool
+        search.__doc__ = f"""Search the Fess index and return ranked document hits.
+Use this first to turn a keyword/question into a shortlist of candidate documents (capture `doc_id`).
+
+{self._descriptor_workflow()}
+
+**Note:** Search hits may include only short summary/snippet fields. For substantial text evidence, always use the content fetch tool/resource.
+
+**Performance:** Use `include_fields` to limit payload to the fields you need.
+
+Args:
+    query: Search term
+    label: Label value to scope the search (default uses configured defaultLabel).
+           Use 'all' to search across the entire index without label filtering.
+           Call list_labels to see available labels.
+    page_size: Number of results per page (default 20, max 100)
+    start: Starting index for pagination (default 0)
+    sort: Sort order
+    lang: Search language
+    include_fields: Fields to include in results"""
+
         @self.mcp.tool(name=f"fess_{self.domain_id}_suggest")
         async def suggest(
             prefix: str,
@@ -113,7 +123,6 @@ fessLabel: {domain.labelFilter}"""
             fields: list[str] | None = None,
             lang: str | None = None,
         ) -> str:
-            """Suggest related terms for a query in the knowledge domain."""
             return await self._handle_suggest(
                 {
                     "prefix": prefix,
@@ -123,12 +132,21 @@ fessLabel: {domain.labelFilter}"""
                 }
             )
 
+        # Set dynamic descriptor for suggest tool
+        suggest.__doc__ = """Get query suggestions based on the index vocabulary.
+Use after reviewing evidence to generate grounded query expansions (synonyms, prefixes, near-terms).
+
+Args:
+    prefix: Search prefix for suggestions
+    num: Number of suggestions to return (default 10)
+    fields: Fields to search for suggestions
+    lang: Search language"""
+
         @self.mcp.tool(name=f"fess_{self.domain_id}_popular_words")
         async def popular_words(
             seed: int | None = None,
             field: str | None = None,
         ) -> str:
-            """Retrieve popular words in the knowledge domain."""
             return await self._handle_popular_words(
                 {
                     "seed": seed,
@@ -136,50 +154,62 @@ fessLabel: {domain.labelFilter}"""
                 }
             )
 
+        # Set dynamic descriptor for popular_words tool
+        popular_words.__doc__ = """Get popular words/terms from the index.
+Use to discover dominant vocabulary for pivots, filters, and follow-up query formulation.
+
+Args:
+    seed: Random seed for word selection
+    field: Field to extract popular words from"""
+
         @self.mcp.tool(name=f"fess_{self.domain_id}_list_labels")
         async def list_labels() -> str:
-            """List available Fess labels and what each label contains.
-
-            Call this tool if unsure which label to use for searching.
-            Returns label values with descriptions, examples, and availability status.
-            """
             return await self._handle_list_labels()
+
+        # Set dynamic descriptor for list_labels tool
+        list_labels.__doc__ = """List available label scopes, including descriptions/examples when configured and whether each label exists in Fess.
+Use this at the start when query intent is unclear or you need a constrained search scope.
+
+Returns label values with descriptions, examples, and availability status."""
 
         @self.mcp.tool(name=f"fess_{self.domain_id}_health")
         async def health() -> str:
-            """Check the health status of the underlying Fess server."""
             return await self._handle_health()
+
+        # Set dynamic descriptor for health tool
+        health.__doc__ = """Check the health status of the underlying Fess server."""
 
         @self.mcp.tool(name=f"fess_{self.domain_id}_job_get")
         async def job_get(job_id: str) -> str:
-            """Retrieve progress information for a long-running operation."""
             return await self._handle_job_get({"jobId": job_id})
+
+        # Set dynamic descriptor for job_get tool
+        job_get.__doc__ = """Retrieve progress information for a long-running operation.
+
+Args:
+    job_id: The job ID to query"""
 
         @self.mcp.tool(name=f"fess_{self.domain_id}_fetch_content_by_id")
         async def fetch_content_by_id(doc_id: str) -> str:
-            """Fetch complete document content by ID.
-
-            This is a simplified alternative to fetch_content_chunk that retrieves the entire
-            document content in one call, without requiring offset/length parameters.
-
-            Use this tool when:
-            - You need the complete content of a document
-            - You don't want to manage offset/length calculations
-            - The document is not excessively large (respects maxChunkBytes server limit)
-
-            For very large documents that exceed maxChunkBytes, this tool will return content
-            up to the limit. Use fetch_content_chunk for granular control over which sections to retrieve.
-
-            Args:
-                doc_id: Document ID obtained from search results (required)
-
-            Returns:
-                JSON with:
-                - 'content': The full document content (up to maxChunkBytes limit)
-                - 'totalLength': Total document length in characters
-                - 'truncated': Boolean indicating if content was truncated due to size limits
-            """
             return await self._handle_fetch_content_by_id({"docId": doc_id})
+
+        # Set dynamic descriptor for fetch_content_by_id tool
+        fetch_content_by_id.__doc__ = f"""Fetch extracted UTF-8 text for a document from the Fess index in one call (no origin URL fetch).
+
+Use when the document is expected to fit within the server's maximum chunk limit or when you want a quick read without managing offsets.
+If the document exceeds the limit, content is truncated; use `fetch_content_chunk` for full traversal.
+
+{self._descriptor_text_source()}
+{self._descriptor_limits()}
+
+Args:
+    doc_id: Document ID obtained from search results (required)
+
+Returns:
+    JSON with:
+    - 'content': The document content (up to maximum chunk size)
+    - 'totalLength': Total document length in characters
+    - 'truncated': Boolean indicating if content was truncated due to size limits"""
 
         @self.mcp.tool(name=f"fess_{self.domain_id}_fetch_content_chunk")
         async def fetch_content_chunk(
@@ -187,47 +217,45 @@ fessLabel: {domain.labelFilter}"""
             offset: int = 0,
             length: int | None = None,
         ) -> str:
-            """Fetch a specific chunk of document content.
-
-            Use this tool to retrieve larger text sections beyond the snippets returned by search.
-            This is essential when you need to read full chapters, sections, or complete documents.
-
-            When to use this tool:
-            - After search returns documents with truncated content snippets
-            - When you see a truncation notice indicating more content is available
-            - To read specific sections of a document using offset/length parameters
-
-            How to use:
-            1. Get the docId from search results
-            2. Start with offset=0 and length=maxChunkBytes to read from the beginning
-            3. Check the 'hasMore' flag in the response to see if more content exists
-            4. For subsequent chunks, increment offset by the previous length value
-
-            Args:
-                doc_id: Document ID obtained from search results (required)
-                offset: Character offset into document (default 0 - start from beginning)
-                length: Number of characters to return (default maxChunkBytes={maxChunkBytes})
-
-            Returns:
-                JSON with:
-                - 'content': The requested text chunk
-                - 'hasMore': Boolean indicating if more content exists beyond this chunk
-                - 'offset': The starting position of this chunk
-                - 'length': Actual length of returned content
-                - 'totalLength': Total document length in characters
-            """
             if length is None:
                 length = self.config.limits.maxChunkBytes
             return await self._handle_fetch_content_chunk(
                 {"docId": doc_id, "offset": offset, "length": length}
             )
 
+        # Set dynamic descriptor for fetch_content_chunk tool
+        fetch_content_chunk.__doc__ = f"""Fetch a window of extracted UTF-8 text for a document from the Fess index (no origin URL fetch).
+
+Use this after `search` when you need substantial evidence (sections/chapters/whole documents).
+
+**Chunking strategy:**
+
+* Start with `offset=0`.
+* Request a `length` up to the server's maximum chunk limit.
+* If `hasMore=true`, set `offset = offset + returned_length` and call again.
+* Repeat until `hasMore=false`.
+
+{self._descriptor_text_source()}
+{self._descriptor_limits()}
+
+Args:
+    doc_id: Document ID obtained from search results (required)
+    offset: Character offset into document (default 0 - start from beginning)
+    length: Number of characters to return (default maximum chunk size)
+
+Returns:
+    JSON with:
+    - 'content': The requested text chunk
+    - 'hasMore': Boolean indicating if more content exists beyond this chunk
+    - 'offset': The starting position of this chunk
+    - 'length': Actual length of returned content
+    - 'totalLength': Total document length in characters"""
+
     def _setup_resources(self) -> None:
         """Set up MCP resources using FastMCP decorators."""
 
         @self.mcp.resource(f"fess://{self.domain_id}/doc/{{doc_id}}")
         async def read_doc(doc_id: str) -> str:
-            """Document metadata."""
             try:
                 # Use default label if it's not "all"
                 label_filter = None if self.default_label == "all" else self.default_label
@@ -249,14 +277,12 @@ fessLabel: {domain.labelFilter}"""
                 logger.error(f"Failed to read resource: {e}")
                 raise
 
+        # Set dynamic descriptor for read_doc resource
+        read_doc.__doc__ = """Document metadata for a given `doc_id`.
+Use `doc/{doc_id}/content` or the content fetch tools to retrieve extracted text."""
+
         @self.mcp.resource(f"fess://{self.domain_id}/doc/{{doc_id}}/content")
         async def read_doc_content(doc_id: str) -> str:
-            """Document content (first maxChunkBytes only).
-
-            Returns the first maxChunkBytes of document content.
-            For documents longer than maxChunkBytes, use the fetch_content_chunk tool
-            to retrieve additional segments.
-            """
             try:
                 # Use default label if it's not "all"
                 label_filter = None if self.default_label == "all" else self.default_label
@@ -285,10 +311,18 @@ fessLabel: {domain.labelFilter}"""
                 logger.error(f"Failed to read resource: {e}")
                 raise
 
+        # Set dynamic descriptor for read_doc_content resource
+        read_doc_content.__doc__ = f"""Document extracted text (index-only). Returns up to the server's maximum chunk limit.
+For longer documents, use `fetch_content_chunk` to iterate through the full extracted text.
+
+{self._descriptor_limits()}"""
+
         @self.mcp.resource(f"fess://{self.domain_id}/labels")
         async def read_labels() -> str:
-            """Available Fess labels with descriptions."""
             return await self._handle_list_labels()
+
+        # Set dynamic descriptor for read_labels resource
+        read_labels.__doc__ = """Available Fess labels with descriptions."""
 
     async def _validate_label(self, label: str) -> None:
         """Validate that a label is allowed.
