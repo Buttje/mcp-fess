@@ -122,8 +122,8 @@ class ServerConfig(BaseModel):
 
 
 def load_config() -> ServerConfig:
-    """Load configuration from ~/.mcp-feiss/config.json."""
-    config_dir = Path.home() / ".mcp-feiss"
+    """Load configuration from ~/.mcp-fess/config.json."""
+    config_dir = Path.home() / ".mcp-fess"
     config_path = config_dir / "config.json"
 
     if not config_path.exists():

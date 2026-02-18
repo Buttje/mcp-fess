@@ -285,14 +285,14 @@ def create_initial_config(config_dir: Path | None = None) -> bool:
     Create initial configuration file.
 
     Args:
-        config_dir: Optional custom config directory. If None, uses default ~/.mcp-feiss/
+        config_dir: Optional custom config directory. If None, uses default ~/.mcp-fess/
 
     Returns:
         bool: True if successful
     """
     try:
         if config_dir is None:
-            config_dir = Path.home() / ".mcp-feiss"
+            config_dir = Path.home() / ".mcp-fess"
 
         config_dir.mkdir(parents=True, exist_ok=True)
         config_path = config_dir / "config.json"

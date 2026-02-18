@@ -68,3 +68,8 @@ def setup_logging(
     logger.addHandler(console_handler)
 
     return logger, debug_file_handle
+def ensure_log_directory() -> Path:
+    """Ensure log directory exists and return its path."""
+    log_dir = Path.home() / ".mcp-fess" / "log"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir

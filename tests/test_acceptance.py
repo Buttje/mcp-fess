@@ -90,7 +90,7 @@ def test_at_cfg_003_directory_creation(monkeypatch, tmp_path, valid_config_dict)
     The server should create the log directory automatically.
     """
     monkeypatch.setenv("HOME", str(tmp_path))
-    log_dir = tmp_path / ".mcp-feiss" / "log"
+    log_dir = tmp_path / ".mcp-fess" / "log"
     assert not log_dir.exists()
 
     # Create log directory
