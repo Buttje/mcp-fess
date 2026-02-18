@@ -353,7 +353,7 @@ def main() -> int:
         "--config-dir",
         type=Path,
         default=None,
-        help="Custom directory for configuration (default: ~/.mcp-feiss/)"
+        help="Custom directory for configuration (default: ~/.mcp-fess/)"
     )
     parser.add_argument(
         "--no-config",
@@ -417,7 +417,7 @@ def main() -> int:
     print_success("MCP-Fess server has been installed successfully")
     print()
     print("Next steps:")
-    print("  1. Edit the configuration file at ~/.mcp-feiss/config.json")
+    print("  1. Edit the configuration file at ~/.mcp-fess/config.json")
     print("     (Update the fessBaseUrl to point to your Fess server)")
     print()
     if os_type == "windows":
