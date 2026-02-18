@@ -75,9 +75,11 @@ pip install -e .
 
 - Python 3.10 or higher
 - A running Fess server instance
+
 ## Configuration
 Create a configuration file at `~/.mcp-fess/config.json`.
 ### Minimal Configuration
+
 The simplest configuration requires only the Fess server URL:
 
 ```json
@@ -239,8 +241,7 @@ python -m mcp_fess
 ```bash
 mcp-fess --debug
 ```
-
-Debug logs are written to `~/.mcp-feiss/log/<timestamp>_server.log` with elapsed time prefixes.
+Debug logs are written to `~/.mcp-fess/log/<timestamp>_server.log` with elapsed time prefixes.
 
 ### HTTP Transport
 
@@ -253,6 +254,10 @@ mcp-fess --transport http
 ```bash
 mcp-fess --cody
 ```
+
+## Configuration
+
+Create a configuration file at `~/.mcp-fess/config.json`.
 
 ## MCP Tools
 
