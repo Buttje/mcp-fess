@@ -147,4 +147,3 @@ def ensure_log_directory() -> Path:
     log_dir = Path.home() / ".mcp-fess" / "log"
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir
-config_dir = tmp_path / ".mcp-fess"  # ✅ CORRECT

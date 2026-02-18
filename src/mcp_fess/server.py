@@ -261,37 +261,25 @@ fessLabel: {domain.labelFilter}"""
                 # Use default label if it's not "all"
                 label_filter = None if self.default_label == "all" else self.default_label
 
-                result = await self.fess_client.search(
-                    query=f"doc_id:{doc_id}",
-                    label_filter=label_filter,
-                    num=1,
-                )
+                # Get extracted text from Fess index only
+                from .fess_client import truncate_text_utf8_safe
 
-                docs = result.get("data", [])
-                if not docs:
-                    raise ValueError(f"Document not found: {doc_id}")
-
-                doc = docs[0]
-                url = doc.get("url", "")
-                if not url:
-                    raise ValueError("Document has no URL")
-
-                # Pass doc_id for file:// URL fallback
-                content, _ = await self.fess_client.fetch_document_content(
-                    url, self.config.contentFetch, doc_id=doc_id
+                content = await self.fess_client.get_extracted_text_by_doc_id(
+                    doc_id, label_filter=label_filter
                 )
 
                 max_chunk = self.config.limits.maxChunkBytes
-                if len(content) <= max_chunk:
-                    return content
-                else:
+                truncated_content, was_truncated = truncate_text_utf8_safe(content, max_chunk)
+
+                if was_truncated:
                     # Add truncation notice to help agents understand content is incomplete
-                    truncated = content[:max_chunk]
                     truncation_notice = (
-                        f"\n\n[Content truncated at {max_chunk} characters. "
+                        f"\n\n[Content truncated at {max_chunk} bytes. "
                         f"Use fetch_content_chunk tool with docId='{doc_id}' to retrieve additional sections.]"
                     )
-                    return truncated + truncation_notice
+                    return truncated_content + truncation_notice
+                else:
+                    return truncated_content
 
             except Exception as e:
                 logger.error(f"Failed to read resource: {e}")
@@ -531,38 +519,25 @@ fessLabel: {domain.labelFilter}"""
                 f"Maximum recommended length is {self.config.limits.maxChunkBytes} bytes."
             )
 
+        # Enforce maxChunkBytes limit on length
+        max_chunk_bytes = self.config.limits.maxChunkBytes
+        if length > max_chunk_bytes:
+            length = max_chunk_bytes
+            logger.debug(
+                f"Requested length {arguments.get('length')} exceeds maxChunkBytes, "
+                f"capping at {max_chunk_bytes}"
+            )
+
         try:
             # Use default label if it's not "all"
             label_filter = None if self.default_label == "all" else self.default_label
 
-            # Get document metadata
-            result = await self.fess_client.search(
-                query=f"doc_id:{doc_id}",
-                label_filter=label_filter,
-                num=1,
+            # Get full extracted text from Fess index
+            content = await self.fess_client.get_extracted_text_by_doc_id(
+                doc_id, label_filter=label_filter
             )
 
-            docs = result.get("data", [])
-            if not docs:
-                raise ValueError(
-                    f"Document not found: {doc_id}. "
-                    "Please verify the document ID using the 'search' tool first."
-                )
-
-            doc = docs[0]
-            url = doc.get("url", "")
-            if not url:
-                raise ValueError(
-                    f"Document {doc_id} has no URL. "
-                    "This document may not have accessible content."
-                )
-
-            # Fetch full document content, passing doc_id for file:// URL fallback
-            content, _ = await self.fess_client.fetch_document_content(
-                url, self.config.contentFetch, doc_id=doc_id
-            )
-
-            # Slice content
+            # Slice content at character level
             chunk = content[offset : offset + length]
             has_more = offset + length < len(content)
 
@@ -584,7 +559,7 @@ fessLabel: {domain.labelFilter}"""
             logger.error(f"Failed to fetch content chunk for {doc_id}: {e}")
             raise ValueError(
                 f"fetch_content_chunk failed to load document {doc_id}. "
-                f"Error: {str(e)}. Please verify the document ID using 'search' tool, "
+                f"Error: {e!s}. Please verify the document ID using 'search' tool, "
                 "or check offset/length parameters."
             ) from e
 
@@ -601,54 +576,32 @@ fessLabel: {domain.labelFilter}"""
             # Use default label if it's not "all"
             label_filter = None if self.default_label == "all" else self.default_label
 
-            # Get document metadata
-            result = await self.fess_client.search(
-                query=f"doc_id:{doc_id}",
-                label_filter=label_filter,
-                num=1,
-            )
-
-            docs = result.get("data", [])
-            if not docs:
-                raise ValueError(
-                    f"Document not found: {doc_id}. "
-                    "Please verify the document ID using the 'search' tool first."
-                )
-
-            doc = docs[0]
-            url = doc.get("url", "")
-            if not url:
-                raise ValueError(
-                    f"Document {doc_id} has no URL. "
-                    "This document may not have accessible content."
-                )
-
-            # Fetch full document content, passing doc_id for file:// URL fallback
-            content, _ = await self.fess_client.fetch_document_content(
-                url, self.config.contentFetch, doc_id=doc_id
+            # Get full extracted text from Fess index
+            content = await self.fess_client.get_extracted_text_by_doc_id(
+                doc_id, label_filter=label_filter
             )
 
             # Store original length before truncation
             original_length = len(content)
 
             # Check if content exceeds maxChunkBytes limit
-            max_bytes = self.config.limits.maxChunkBytes
-            truncated = len(content) > max_bytes
+            from .fess_client import truncate_text_utf8_safe
 
-            if truncated:
-                content = content[:max_bytes]
+            max_bytes = self.config.limits.maxChunkBytes
+            truncated_content, was_truncated = truncate_text_utf8_safe(content, max_bytes)
 
             result = {
-                "content": content,
+                "content": truncated_content,
                 "totalLength": original_length,  # Full document length
-                "truncated": truncated,
+                "truncated": was_truncated,
             }
 
-            if truncated:
+            if was_truncated:
                 result["message"] = (
-                    f"Content was truncated at {max_bytes} characters. "
+                    f"Content was truncated at {max_bytes} bytes. "
                     f"Full document is {original_length} characters. "
-                    "Use fetch_content_chunk tool to retrieve specific sections."
+                    f"Use fetch_content_chunk tool with docId='{doc_id}' "
+                    "to retrieve additional sections."
                 )
 
             return json.dumps(result, indent=2)
@@ -661,7 +614,7 @@ fessLabel: {domain.labelFilter}"""
             logger.error(f"Failed to fetch content by ID for {doc_id}: {e}")
             raise ValueError(
                 f"fetch_content_by_id failed to load document {doc_id}. "
-                f"Error: {str(e)}. Please verify the document ID using 'search' tool."
+                f"Error: {e!s}. Please verify the document ID using 'search' tool."
             ) from e
 
     async def run_stdio(self) -> None:
