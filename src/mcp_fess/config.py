@@ -144,6 +144,6 @@ def load_config() -> ServerConfig:
 
 def ensure_log_directory() -> Path:
     """Ensure log directory exists and return its path."""
-    log_dir = Path.home() / ".mcp-feiss" / "log"
+    log_dir = Path.home() / ".mcp-fess" / "log"
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir
