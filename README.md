@@ -259,6 +259,33 @@ mcp-fess --cody
 
 Create a configuration file at `~/.mcp-fess/config.json`.
 
+## Agent Workflow
+
+MCP-Fess provides a structured workflow for agents to efficiently search and retrieve information from Fess:
+
+### Efficient Search Strategy
+
+1. **(Optional) Discover labels**: Call `list_labels` to pick a label scope if you need to restrict the search space
+2. **Search for documents**: Call `search` to get relevant hits and collect `doc_id`s
+3. **Fetch content**: Call `fetch_content_chunk` (preferred) or `fetch_content_by_id` to read extracted UTF-8 text evidence from the index
+4. **Refine**: Use evidence to refine the query; optionally use `suggest` and `popular_words` to expand/pivot
+
+### Content Retrieval
+
+- **Search results** contain only short summary/snippet fields
+- **Full document text** is retrieved from the Fess index (not from origin URLs)
+- **Text source priority**: `content` field → `body` field → `digest` field
+- **Chunking**: For documents exceeding the maximum chunk size, use `fetch_content_chunk` to iterate through content:
+  - Start with `offset=0`
+  - If `hasMore=true`, set `offset = offset + returned_length` and call again
+  - Repeat until `hasMore=false`
+
+### Performance Tips
+
+- Use `include_fields` parameter in search to limit payload to needed fields
+- Use chunking for large documents instead of fetching entire content at once
+- Leverage labels to scope searches and reduce result sets
+
 ## MCP Tools
 
 The server exposes the following tools (prefixed with `fess_<domain_id>_`):
@@ -294,7 +321,7 @@ Returns a catalog of labels with:
 - Strict mode status
 
 ### 3. Suggest Tool
-Get search term suggestions.
+Get query suggestions based on the index vocabulary. Use after reviewing evidence to generate grounded query expansions (synonyms, prefixes, near-terms).
 
 **Parameters:**
 - `prefix` (required): Search prefix
@@ -303,7 +330,7 @@ Get search term suggestions.
 - `lang` (optional): Language
 
 ### 4. Popular Words Tool
-Retrieve popular/trending words.
+Get popular words/terms from the index. Use to discover dominant vocabulary for pivots, filters, and follow-up query formulation.
 
 **Parameters:**
 - `seed` (optional): Random seed
@@ -319,22 +346,24 @@ Query status of long-running operations.
 - `jobId` (required): Job identifier
 
 ### 7. Fetch Content Chunk Tool
-Fetch a specific chunk of document content. **Use this when read_doc_content truncates content (hasMore flag).**
+Fetch a window of extracted UTF-8 text for a document from the Fess index (no origin URL fetch).
 
-Retrieve additional segments by adjusting offset/length parameters to navigate through the document.
+Use this after `search` when you need substantial evidence (sections/chapters/whole documents).
+
+**Text source:** Index fields only (priority: `content` → `body` → `digest`). No origin URL fetch.
 
 **Parameters:**
-- `doc_id` (required): Document ID (same format as read_doc_content resource)
+- `doc_id` (required): Document ID obtained from search results
 - `offset` (optional): Character offset into document (default 0)
 - `length` (optional): Number of characters to return (default maxChunkBytes)
 
 **Returns:**
 JSON with:
-- `content`: The requested chunk of document content
-- `hasMore`: Boolean flag indicating if more content is available
-- `offset`: The offset used
-- `length`: Actual length of returned chunk
-- `totalLength`: Total length of the document
+- `content`: The requested text chunk
+- `hasMore`: Boolean indicating if more content exists beyond this chunk
+- `offset`: The starting position of this chunk
+- `length`: Actual length of returned content
+- `totalLength`: Total document length in characters
 
 **Example:**
 ```json
@@ -349,14 +378,28 @@ JSON with:
 
 To retrieve the next chunk, use `offset: 1048576` with the same `length`.
 
+### 8. Fetch Content By ID Tool
+Fetch extracted UTF-8 text for a document from the Fess index in one call (no origin URL fetch).
+
+Use when the document is expected to fit within the server's maximum chunk limit or when you want a quick read without managing offsets. If the document exceeds the limit, content is truncated; use `fetch_content_chunk` for full traversal.
+
+**Text source:** Index fields only (priority: `content` → `body` → `digest`). No origin URL fetch.
+
+**Parameters:**
+- `doc_id` (required): Document ID obtained from search results
+
+**Returns:**
+JSON with:
+- `content`: The document content (up to maximum chunk size)
+- `totalLength`: Total document length in characters
+- `truncated`: Boolean indicating if content was truncated due to size limits
+
 ## MCP Resources
 
 Documents and labels are exposed as resources with URIs:
-- `fess://<domain_id>/doc/<doc_id>` - Document metadata
-- `fess://<domain_id>/doc/<doc_id>/content` - Document content (first maxChunkBytes bytes only; use fetch_content_chunk tool for additional segments)
-- `fess://<domain_id>/labels` - Available labels catalog
-
-Resources include the Knowledge Domain block in descriptions, enabling LLMs to understand the domain context.
+- `fess://<domain_id>/doc/<doc_id>` - Document metadata. Use `doc/{doc_id}/content` or the content fetch tools to retrieve extracted text.
+- `fess://<domain_id>/doc/<doc_id>/content` - Document extracted text (index-only). Returns up to the server's maximum chunk limit. For longer documents, use `fetch_content_chunk` to iterate through the full extracted text.
+- `fess://<domain_id>/labels` - Available labels catalog with descriptions.
 
 ## Best Practices for Agents
 
