@@ -31,56 +31,36 @@ async def test_read_doc_content_adds_truncation_notice(fess_server):
     doc_id = "test_doc_123"
     # Content longer than maxChunkBytes (100)
     long_content = "A" * 200
-    doc_url = "http://example.com/doc.txt"
 
-    # Mock the search call
-    mock_search_result = {
-        "data": [{"doc_id": doc_id, "url": doc_url, "title": "Test Doc"}]
-    }
+    # Mock the search call with content field (index-only retrieval)
+    mock_search_result = {"data": [{"doc_id": doc_id, "content": long_content, "title": "Test Doc"}]}
 
-    with (
-        patch.object(
-            fess_server.fess_client,
-            "search",
-            new=AsyncMock(return_value=mock_search_result),
-        ),
-        patch.object(
-            fess_server.fess_client,
-            "fetch_document_content",
-            new=AsyncMock(return_value=(long_content, "hash123")),
-        ),
+    with patch.object(
+        fess_server.fess_client,
+        "search",
+        new=AsyncMock(return_value=mock_search_result),
     ):
-        # Call the handler directly
-        arguments = {}
-        # We can't easily test the resource decorator, so we'll test the underlying logic
-        # by simulating what the resource would do
+        # Test the underlying logic by calling get_extracted_text_by_doc_id
+        from mcp_fess.fess_client import truncate_text_utf8_safe
 
-        result = await fess_server.fess_client.search(
-            query=f"doc_id:{doc_id}", label_filter=None, num=1
-        )
-        docs = result.get("data", [])
-        url = docs[0]["url"]
-        content, _ = await fess_server.fess_client.fetch_document_content(
-            url, fess_server.config.contentFetch, doc_id=doc_id
-        )
-
+        content = await fess_server.fess_client.get_extracted_text_by_doc_id(doc_id, None)
+        
         max_chunk = fess_server.config.limits.maxChunkBytes
-        if len(content) > max_chunk:
-            truncated = content[:max_chunk]
+        truncated_content, was_truncated = truncate_text_utf8_safe(content, max_chunk)
+        
+        if was_truncated:
             truncation_notice = (
-                f"\n\n[Content truncated at {max_chunk} characters. "
+                f"\n\n[Content truncated at {max_chunk} bytes. "
                 f"Use fetch_content_chunk tool with docId='{doc_id}' to retrieve additional sections.]"
             )
-            result_content = truncated + truncation_notice
+            result_content = truncated_content + truncation_notice
         else:
-            result_content = content
+            result_content = truncated_content
 
         # Verify truncation notice is added
         assert "[Content truncated" in result_content
         assert "fetch_content_chunk" in result_content
         assert doc_id in result_content
-        assert len(result_content) > max_chunk
-
 
 @pytest.mark.asyncio
 async def test_read_doc_content_no_truncation_notice_for_short_content(fess_server):
@@ -88,44 +68,31 @@ async def test_read_doc_content_no_truncation_notice_for_short_content(fess_serv
     doc_id = "test_doc_123"
     # Content shorter than maxChunkBytes (100)
     short_content = "Short content"
-    doc_url = "http://example.com/doc.txt"
 
-    # Mock the search call
-    mock_search_result = {
-        "data": [{"doc_id": doc_id, "url": doc_url, "title": "Test Doc"}]
-    }
+    # Mock the search call with content field (index-only retrieval)
+    mock_search_result = {"data": [{"doc_id": doc_id, "content": short_content, "title": "Test Doc"}]}
 
-    with (
-        patch.object(
-            fess_server.fess_client,
-            "search",
-            new=AsyncMock(return_value=mock_search_result),
-        ),
-        patch.object(
-            fess_server.fess_client,
-            "fetch_document_content",
-            new=AsyncMock(return_value=(short_content, "hash123")),
-        ),
+    with patch.object(
+        fess_server.fess_client,
+        "search",
+        new=AsyncMock(return_value=mock_search_result),
     ):
-        result = await fess_server.fess_client.search(
-            query=f"doc_id:{doc_id}", label_filter=None, num=1
-        )
-        docs = result.get("data", [])
-        url = docs[0]["url"]
-        content, _ = await fess_server.fess_client.fetch_document_content(
-            url, fess_server.config.contentFetch, doc_id=doc_id
-        )
+        # Test the underlying logic
+        from mcp_fess.fess_client import truncate_text_utf8_safe
 
+        content = await fess_server.fess_client.get_extracted_text_by_doc_id(doc_id, None)
+        
         max_chunk = fess_server.config.limits.maxChunkBytes
-        if len(content) > max_chunk:
-            truncated = content[:max_chunk]
+        truncated_content, was_truncated = truncate_text_utf8_safe(content, max_chunk)
+        
+        if was_truncated:
             truncation_notice = (
-                f"\n\n[Content truncated at {max_chunk} characters. "
+                f"\n\n[Content truncated at {max_chunk} bytes. "
                 f"Use fetch_content_chunk tool with docId='{doc_id}' to retrieve additional sections.]"
             )
-            result_content = truncated + truncation_notice
+            result_content = truncated_content + truncation_notice
         else:
-            result_content = content
+            result_content = truncated_content
 
         # Verify no truncation notice
         assert "[Content truncated" not in result_content
@@ -165,21 +132,24 @@ async def test_fetch_content_chunk_improved_error_doc_not_found(fess_server):
     with patch.object(
         fess_server.fess_client, "search", new=AsyncMock(return_value=mock_search_result)
     ):
-        with pytest.raises(ValueError, match="Document not found.*verify.*search.*tool"):
+        with pytest.raises(ValueError, match="Document not found for doc_id=nonexistent"):
             await fess_server._handle_fetch_content_chunk(
                 {"docId": "nonexistent", "offset": 0, "length": 100}
             )
 
 
 @pytest.mark.asyncio
-async def test_fetch_content_chunk_improved_error_no_url(fess_server):
-    """Test improved error message when document has no URL."""
+async def test_fetch_content_chunk_improved_error_no_content(fess_server):
+    """Test improved error message when document has no extractable content."""
+    # Document with no content/body/digest fields
     mock_search_result = {"data": [{"doc_id": "test", "title": "Test"}]}
 
     with patch.object(
         fess_server.fess_client, "search", new=AsyncMock(return_value=mock_search_result)
     ):
-        with pytest.raises(ValueError, match="has no URL.*may not have accessible content"):
+        with pytest.raises(
+            ValueError, match="No extracted text available in Fess index for doc_id=test"
+        ):
             await fess_server._handle_fetch_content_chunk(
                 {"docId": "test", "offset": 0, "length": 100}
             )
@@ -190,21 +160,14 @@ async def test_fetch_content_chunk_success(fess_server):
     """Test successful fetch_content_chunk call."""
     doc_id = "test_doc_123"
     content = "A" * 200  # 200 characters
-    doc_url = "http://example.com/doc.txt"
 
-    mock_search_result = {"data": [{"doc_id": doc_id, "url": doc_url}]}
+    # Mock the search result with content field (index-only retrieval)
+    mock_search_result = {"data": [{"doc_id": doc_id, "content": content}]}
 
-    with (
-        patch.object(
-            fess_server.fess_client,
-            "search",
-            new=AsyncMock(return_value=mock_search_result),
-        ),
-        patch.object(
-            fess_server.fess_client,
-            "fetch_document_content",
-            new=AsyncMock(return_value=(content, "hash123")),
-        ),
+    with patch.object(
+        fess_server.fess_client,
+        "search",
+        new=AsyncMock(return_value=mock_search_result),
     ):
         result_json = await fess_server._handle_fetch_content_chunk(
             {"docId": doc_id, "offset": 0, "length": 100}
@@ -223,21 +186,14 @@ async def test_fetch_content_by_id_success(fess_server):
     """Test successful fetch_content_by_id call."""
     doc_id = "test_doc_123"
     content = "Full document content here"
-    doc_url = "http://example.com/doc.txt"
 
-    mock_search_result = {"data": [{"doc_id": doc_id, "url": doc_url}]}
+    # Mock the search result with content field (index-only retrieval)
+    mock_search_result = {"data": [{"doc_id": doc_id, "content": content}]}
 
-    with (
-        patch.object(
-            fess_server.fess_client,
-            "search",
-            new=AsyncMock(return_value=mock_search_result),
-        ),
-        patch.object(
-            fess_server.fess_client,
-            "fetch_document_content",
-            new=AsyncMock(return_value=(content, "hash123")),
-        ),
+    with patch.object(
+        fess_server.fess_client,
+        "search",
+        new=AsyncMock(return_value=mock_search_result),
     ):
         result_json = await fess_server._handle_fetch_content_by_id({"docId": doc_id})
         result = json.loads(result_json)
@@ -253,21 +209,14 @@ async def test_fetch_content_by_id_truncated(fess_server):
     doc_id = "test_doc_123"
     # Content longer than maxChunkBytes (100)
     long_content = "A" * 200
-    doc_url = "http://example.com/doc.txt"
 
-    mock_search_result = {"data": [{"doc_id": doc_id, "url": doc_url}]}
+    # Mock the search result with content field (index-only retrieval)
+    mock_search_result = {"data": [{"doc_id": doc_id, "content": long_content}]}
 
-    with (
-        patch.object(
-            fess_server.fess_client,
-            "search",
-            new=AsyncMock(return_value=mock_search_result),
-        ),
-        patch.object(
-            fess_server.fess_client,
-            "fetch_document_content",
-            new=AsyncMock(return_value=(long_content, "hash123")),
-        ),
+    with patch.object(
+        fess_server.fess_client,
+        "search",
+        new=AsyncMock(return_value=mock_search_result),
     ):
         result_json = await fess_server._handle_fetch_content_by_id({"docId": doc_id})
         result = json.loads(result_json)
@@ -294,36 +243,30 @@ async def test_fetch_content_by_id_doc_not_found(fess_server):
     with patch.object(
         fess_server.fess_client, "search", new=AsyncMock(return_value=mock_search_result)
     ):
-        with pytest.raises(ValueError, match="Document not found.*verify.*search.*tool"):
+        with pytest.raises(ValueError, match="Document not found for doc_id=nonexistent"):
             await fess_server._handle_fetch_content_by_id({"docId": "nonexistent"})
 
 
 @pytest.mark.asyncio
-async def test_fetch_content_chunk_passes_doc_id_to_fetch(fess_server):
-    """Test that fetch_content_chunk passes doc_id for file:// URL handling."""
+async def test_fetch_content_uses_index_only(fess_server):
+    """Test that fetch_content_chunk uses index-only retrieval (not URL fetching)."""
     doc_id = "test_doc_123"
-    content = "Test content"
-    doc_url = "file:///home/user/test.txt"
+    content = "Test content from index"
 
-    mock_search_result = {"data": [{"doc_id": doc_id, "url": doc_url}]}
+    # Mock the search result with content field - no need to fetch from URL
+    mock_search_result = {"data": [{"doc_id": doc_id, "content": content}]}
 
-    with (
-        patch.object(
-            fess_server.fess_client,
-            "search",
-            new=AsyncMock(return_value=mock_search_result),
-        ),
-        patch.object(
-            fess_server.fess_client,
-            "fetch_document_content",
-            new=AsyncMock(return_value=(content, "hash123")),
-        ) as mock_fetch,
+    with patch.object(
+        fess_server.fess_client,
+        "search",
+        new=AsyncMock(return_value=mock_search_result),
     ):
-        await fess_server._handle_fetch_content_chunk(
+        result_json = await fess_server._handle_fetch_content_chunk(
             {"docId": doc_id, "offset": 0, "length": 100}
         )
+        result = json.loads(result_json)
 
-        # Verify that fetch_document_content was called with doc_id parameter
-        mock_fetch.assert_called_once()
-        call_args = mock_fetch.call_args
-        assert call_args.kwargs["doc_id"] == doc_id
+        # Verify content was retrieved from index
+        assert result["content"] == content
+        # Verify search was called (index-only retrieval)
+        fess_server.fess_client.search.assert_called()

@@ -6,7 +6,7 @@ import logging
 import time
 from io import BytesIO
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 import httpx
 from bs4 import BeautifulSoup
@@ -15,6 +15,31 @@ from pypdf import PdfReader
 from .config import ContentFetchConfig
 
 logger = logging.getLogger("mcp_fess")
+
+
+def truncate_text_utf8_safe(text: str, max_bytes: int) -> tuple[str, bool]:
+    """
+    Truncate text to max_bytes safely without splitting UTF-8 multibyte sequences.
+
+    Args:
+        text: Text to truncate
+        max_bytes: Maximum number of UTF-8 bytes
+
+    Returns:
+        Tuple of (truncated_text, was_truncated)
+    """
+    if not text:
+        return text, False
+
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return text, False
+
+    # Truncate at byte boundary and decode with error handling
+    # This will drop any partial multibyte sequence at the end
+    truncated = encoded[:max_bytes].decode("utf-8", errors="ignore")
+    return truncated, True
+
 
 
 class LabelCache:
@@ -204,12 +229,99 @@ class FessClient:
             logger.error(f"Fess health check error: {e}")
             raise
 
+    async def get_extracted_text_by_doc_id(
+        self, doc_id: str, label_filter: str | None = None
+    ) -> str:
+        """
+        Get extracted text from Fess index by document ID.
+
+        This method retrieves text content exclusively from the Fess search index,
+        using the text field priority: content → body → digest.
+
+        Args:
+            doc_id: The Fess document ID
+            label_filter: Optional label filter to apply (None for "all")
+
+        Returns:
+            Extracted text content as a string
+
+        Raises:
+            ValueError: If document is not found or has no extracted text available
+        """
+        logger.debug(
+            f"Fetching extracted text from Fess index for doc_id={doc_id}, "
+            f"label_filter={label_filter}"
+        )
+
+        try:
+            # Search for the specific document by ID
+            result = await self.search(
+                query=f"doc_id:{doc_id}", label_filter=label_filter, num=1, start=0
+            )
+            docs = result.get("data", [])
+
+            if not docs:
+                raise ValueError(f"Document not found for doc_id={doc_id}")
+
+            doc = docs[0]
+
+            # Text field priority: content → body → digest
+            # Normalize to handle list types (some Fess configs return lists)
+            def normalize_field(value: Any) -> str:
+                """Normalize field value to string."""
+                if value is None:
+                    return ""
+                if isinstance(value, list):
+                    # Join list items if it's a list
+                    return "\n\n".join(str(item) for item in value if item)
+                return str(value).strip()
+
+            content = normalize_field(doc.get("content"))
+            if content:
+                logger.info(
+                    f"Retrieved content from 'content' field for doc_id={doc_id}, "
+                    f"length={len(content)}"
+                )
+                return content
+
+            body = normalize_field(doc.get("body"))
+            if body:
+                logger.info(
+                    f"Retrieved content from 'body' field for doc_id={doc_id}, "
+                    f"length={len(body)}"
+                )
+                return body
+
+            digest = normalize_field(doc.get("digest"))
+            if digest:
+                logger.info(
+                    f"Retrieved content from 'digest' field for doc_id={doc_id}, "
+                    f"length={len(digest)}"
+                )
+                return digest
+
+            # No text available
+            raise ValueError(
+                f"No extracted text available in Fess index for doc_id={doc_id}. "
+                "Ensure Fess is configured to store extracted content "
+                "(e.g., content/body) in the index."
+            )
+
+        except ValueError:
+            # Re-raise ValueError as-is
+            raise
+        except Exception as e:
+            logger.error(f"Failed to fetch extracted text for doc_id={doc_id}: {e}")
+            raise ValueError(
+                f"Unable to fetch extracted text for {doc_id} from Fess index: {e}"
+            ) from e
+
     async def fetch_document_content_by_id(self, doc_id: str) -> tuple[str, str]:
         """
         Fetch document content from Fess by document ID.
 
-        This method is used as a fallback for file:// URLs, fetching content
-        directly from Fess storage via the /api/v1/documents/{docId} endpoint.
+        This is a compatibility wrapper around get_extracted_text_by_doc_id.
+        All content is retrieved from the Fess index only.
 
         Args:
             doc_id: The Fess document ID
@@ -219,134 +331,49 @@ class FessClient:
 
         Raises:
             ValueError: If document cannot be fetched
-            httpx.HTTPError: If HTTP request fails
         """
-        # Try to fetch document content via Fess API
-        # Fess stores the full content and we can retrieve it via the search API
-        url = urljoin(self.base_url, f"/api/v1/documents")
-        logger.debug(f"Fetching document content by ID from Fess: {doc_id}")
+        logger.debug(f"Fetching document content by ID from Fess index: {doc_id}")
 
-        try:
-            # Search for the specific document by ID
-            result = await self.search(query=f"doc_id:{doc_id}", num=1)
-            docs = result.get("data", [])
+        # Use the new index-only method
+        content = await self.get_extracted_text_by_doc_id(doc_id, label_filter=None)
+        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        return content, content_hash
 
-            if not docs:
-                raise ValueError(f"Document not found in Fess: {doc_id}")
-
-            doc = docs[0]
-
-            # Get the content from the document metadata
-            # Fess typically stores the full content in the 'content' or 'body' field
-            content = doc.get("content", "") or doc.get("body", "")
-
-            if not content:
-                # Try to get content from 'digest' field as a fallback
-                content = doc.get("digest", "")
-
-            if not content:
-                raise ValueError(
-                    f"Document {doc_id} found but has no retrievable content. "
-                    "The document may not have indexed content available."
-                )
-
-            content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
-            return content, content_hash
-
-        except httpx.HTTPError as e:
-            logger.error(f"Failed to fetch document content by ID {doc_id}: {e}")
-            raise ValueError(
-                f"Unable to fetch document content for {doc_id} from Fess API: {e}"
-            ) from e
-
-    async def fetch_document_content(self, url: str, config: ContentFetchConfig, doc_id: str | None = None) -> tuple[str, str]:
+    async def fetch_document_content(
+        self, url: str, config: ContentFetchConfig, doc_id: str | None = None
+    ) -> tuple[str, str]:
         """
-        Fetch full document content from URL.
+        Fetch document content from Fess index only.
 
-        For file:// URLs, attempts to fetch content via Fess API using the document ID.
-        For http/https URLs, fetches content directly from the URL.
+        This method now retrieves all content exclusively from the Fess search index,
+        regardless of the URL scheme. It does not fetch content directly from URLs.
 
         Args:
-            url: The document URL
-            config: Content fetch configuration
-            doc_id: Optional document ID for file:// URL fallback
+            url: The document URL (used for logging only, not fetched)
+            config: Content fetch configuration (for compatibility)
+            doc_id: Document ID (required for content retrieval)
 
         Returns:
             Tuple of (content, hash)
 
         Raises:
-            ValueError: If content fetching fails or is disabled
-            httpx.HTTPError: If HTTP request fails
+            ValueError: If content fetching fails or doc_id is missing
         """
         if not config.enabled:
             raise ValueError("Content fetching is disabled")
 
-        parsed = urlparse(url)
-
-        # Handle file:// scheme by fetching via Fess API
-        if parsed.scheme == "file":
-            if not doc_id:
-                raise ValueError(
-                    "Cannot fetch file:// URL without document ID. "
-                    "Please obtain the document ID from search results and use fetch_content_chunk tool."
-                )
-
-            logger.info(f"Detected file:// URL, fetching content via Fess API for doc_id: {doc_id}")
-            try:
-                return await self.fetch_document_content_by_id(doc_id)
-            except Exception as e:
-                logger.error(f"Failed to fetch file:// URL via Fess API: {e}")
-                raise ValueError(
-                    f"Unable to fetch content for file:// URL. "
-                    f"Fess API fallback failed: {e}"
-                ) from e
-
-        # Check allowed schemes for non-file URLs
-        if parsed.scheme not in config.allowedSchemes:
+        if not doc_id:
             raise ValueError(
-                f"Scheme '{parsed.scheme}' is not allowed. "
-                f"Allowed schemes: {', '.join(config.allowedSchemes)}. "
-                f"For file:// URLs, ensure document ID is provided for Fess API fallback."
+                "Document ID is required for content retrieval. "
+                "Content is now retrieved exclusively from the Fess index."
             )
 
-        if (
-            not config.allowPrivateNetworkTargets
-            and self._is_private_network(parsed.hostname or "")
-            and (
-                not config.allowedHostAllowlist
-                or parsed.hostname not in config.allowedHostAllowlist
-            )
-        ):
-            raise ValueError(f"Access to private network target {parsed.hostname} not allowed")
+        logger.info(
+            f"Fetching content from Fess index for doc_id={doc_id} (url={url}, source=fess_index)"
+        )
 
-        headers = {"User-Agent": config.userAgent}
-        timeout = config.timeoutMs / 1000.0
-
-        logger.debug(f"Fetching content from: {url}")
-
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.get(url, headers=headers, follow_redirects=True)
-                response.raise_for_status()
-
-                content_type = response.headers.get("content-type", "").lower()
-                content_bytes = response.content[: config.maxBytes]
-
-                if "html" in content_type:
-                    content = self._extract_text_from_html(content_bytes)
-                elif "pdf" in content_type:
-                    if not config.enablePdf:
-                        raise ValueError("PDF conversion is disabled")
-                    content = self._extract_text_from_pdf(content_bytes)
-                else:
-                    content = content_bytes.decode("utf-8", errors="ignore")
-
-                content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
-                return content, content_hash
-
-        except httpx.HTTPError as e:
-            logger.error(f"Failed to fetch content from {url}: {e}")
-            raise
+        # Use the new index-only method
+        return await self.fetch_document_content_by_id(doc_id)
 
     def _is_private_network(self, hostname: str) -> bool:
         """Check if hostname is a private network address."""
