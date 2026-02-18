@@ -35,8 +35,8 @@ def test_descriptor_workflow_content(fess_server):
 def test_descriptor_text_source_content(fess_server):
     """Test that text source descriptor states index-only."""
     text_source = fess_server._descriptor_text_source()
-    assert "Index fields only" in text_source or "index fields only" in text_source
-    assert "No origin URL fetch" in text_source or "no origin URL fetch" in text_source
+    assert "Index fields only" in text_source
+    assert "No origin URL fetch" in text_source
     assert "content" in text_source
     assert "body" in text_source
     assert "digest" in text_source
@@ -53,18 +53,10 @@ def test_descriptor_limits_has_actual_value(fess_server):
 
 def test_no_placeholder_text_in_descriptors(fess_server):
     """Test that no tool/resource descriptors contain raw placeholder text."""
-    # Get all tools by inspecting the mcp instance
-    # Note: We can't easily inspect FastMCP tools, so we test the handlers directly
-
-    # Check search tool descriptor (via the function we can access)
-    from mcp_fess.server import FessServer
-    temp_server = FessServer(ServerConfig(fessBaseUrl="http://localhost:8080"))
-
-    # The tools are set up during __init__, so we need to check they don't have placeholders
-    # We'll verify by checking that the descriptor helpers don't have placeholders
-    assert "{maxChunkBytes}" not in temp_server._descriptor_workflow()
-    assert "{maxChunkBytes}" not in temp_server._descriptor_text_source()
-    assert "{maxChunkBytes}" not in temp_server._descriptor_limits()
+    # Verify by checking that the descriptor helpers don't have placeholders
+    assert "{maxChunkBytes}" not in fess_server._descriptor_workflow()
+    assert "{maxChunkBytes}" not in fess_server._descriptor_text_source()
+    assert "{maxChunkBytes}" not in fess_server._descriptor_limits()
 
 
 def test_search_tool_teaches_workflow(fess_server):
@@ -85,15 +77,15 @@ def test_fetch_content_chunk_teaches_iteration(fess_server):
     # We verify the helper contains the right info
     text_source = fess_server._descriptor_text_source()
 
-    assert "Index fields only" in text_source or "index fields only" in text_source
-    assert "No origin URL fetch" in text_source or "no origin URL fetch" in text_source
+    assert "Index fields only" in text_source
+    assert "No origin URL fetch" in text_source
 
 
 def test_fetch_content_by_id_states_index_only(fess_server):
     """Test that fetch_content_by_id descriptor states index-only source."""
     # Verify helper methods support this
     text_source = fess_server._descriptor_text_source()
-    assert "Index fields only" in text_source or "index fields only" in text_source
+    assert "Index fields only" in text_source
 
 
 def test_limits_descriptor_has_numeric_value(fess_server):
