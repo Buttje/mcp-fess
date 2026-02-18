@@ -100,7 +100,7 @@ async def test_fetch_document_content_by_id_not_found(fess_client):
     with patch.object(
         fess_client, "search", new=AsyncMock(return_value=mock_search_result)
     ):
-        with pytest.raises(ValueError, match="Document not found in Fess"):
+        with pytest.raises(ValueError, match="Document not found for doc_id=nonexistent_doc"):
             await fess_client.fetch_document_content_by_id("nonexistent_doc")
 
 
@@ -120,7 +120,9 @@ async def test_fetch_document_content_by_id_no_content(fess_client):
     with patch.object(
         fess_client, "search", new=AsyncMock(return_value=mock_search_result)
     ):
-        with pytest.raises(ValueError, match="has no retrievable content"):
+        with pytest.raises(
+            ValueError, match="No extracted text available in Fess index for doc_id=test_doc_123"
+        ):
             await fess_client.fetch_document_content_by_id("test_doc_123")
 
 
@@ -151,10 +153,10 @@ async def test_fetch_document_content_file_url_with_doc_id(fess_client, content_
 async def test_fetch_document_content_file_url_without_doc_id(
     fess_client, content_fetch_config
 ):
-    """Test that file:// URL without doc_id raises helpful error."""
+    """Test that file:// URL without doc_id raises helpful error (now all URLs require doc_id)."""
     file_url = "file:///home/user/documents/test.txt"
 
-    with pytest.raises(ValueError, match="Cannot fetch file:// URL without document ID"):
+    with pytest.raises(ValueError, match="Document ID is required for content retrieval"):
         await fess_client.fetch_document_content(file_url, content_fetch_config)
 
 
@@ -162,7 +164,7 @@ async def test_fetch_document_content_file_url_without_doc_id(
 async def test_fetch_document_content_file_url_api_failure(
     fess_client, content_fetch_config
 ):
-    """Test error handling when Fess API fails for file:// URL."""
+    """Test error handling when Fess API fails (index-only retrieval)."""
     file_url = "file:///home/user/documents/test.txt"
     doc_id = "test_doc_123"
 
@@ -170,9 +172,9 @@ async def test_fetch_document_content_file_url_api_failure(
     with patch.object(
         fess_client,
         "fetch_document_content_by_id",
-        new=AsyncMock(side_effect=Exception("Fess API error")),
+        new=AsyncMock(side_effect=ValueError("Document not found for doc_id=test_doc_123")),
     ):
-        with pytest.raises(ValueError, match="Unable to fetch content for file:// URL"):
+        with pytest.raises(ValueError, match="Document not found for doc_id=test_doc_123"):
             await fess_client.fetch_document_content(
                 file_url, content_fetch_config, doc_id=doc_id
             )
