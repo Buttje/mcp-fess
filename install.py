@@ -353,7 +353,7 @@ def main() -> int:
         "--config-dir",
         type=Path,
         default=None,
-        help="Custom directory for configuration (default: ~/.mcp-feiss/)"
+        help="Custom directory for configuration (default: ~/.mcp-fess/)"
     )
     parser.add_argument(
         "--no-config",

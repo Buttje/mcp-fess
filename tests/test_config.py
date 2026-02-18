@@ -189,37 +189,36 @@ def test_load_config_missing_file(tmp_path, monkeypatch):
     with pytest.raises(FileNotFoundError, match="Configuration file not found"):
         load_config()
 
-
 def test_load_config_invalid_json(tmp_path, monkeypatch):
-    """Test load_config with invalid JSON."""
-    monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    config_dir = tmp_path / ".mcp-feiss"
-    config_dir.mkdir()
-    config_file = config_dir / "config.json"
-    config_file.write_text("invalid json {")
+      """Test load_config with invalid JSON."""
+      monkeypatch.setattr(Path, "home", lambda: tmp_path)
+      config_dir = tmp_path / ".mcp-fess"  # ✅ FIXED
+      config_dir.mkdir()
+      config_file = config_dir / "config.json"
+      config_file.write_text("invalid json {")
 
-    with pytest.raises(ValueError, match="Invalid JSON"):
-        load_config()
+      with pytest.raises(ValueError, match="Invalid JSON"):
+          load_config()
 
 
 def test_load_config_valid(tmp_path, monkeypatch):
-    """Test load_config with valid configuration."""
-    monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    config_dir = tmp_path / ".mcp-feiss"
-    config_dir.mkdir()
-    config_file = config_dir / "config.json"
+      """Test load_config with valid configuration."""
+      monkeypatch.setattr(Path, "home", lambda: tmp_path)
+      config_dir = tmp_path / ".mcp-fess"  # ✅ FIXED
+      config_dir.mkdir()
+      config_file = config_dir / "config.json"
 
-    config_data = {
-        "fessBaseUrl": "http://localhost:8080",
-        "domain": {
-            "id": "test",
-            "name": "Test Domain",
-            "description": "Test",
-        },
-    }
-    config_file.write_text(json.dumps(config_data))
+      config_data = {
+          "fessBaseUrl": "http://localhost:8080",
+          "domain": {
+              "id": "test",
+              "name": "Test Domain",
+              "description": "Test",
+          },
+      }
+      config_file.write_text(json.dumps(config_data))
 
-    config = load_config()
-    assert config.fessBaseUrl == "http://localhost:8080"
-    assert config.domain.id == "test"
-    assert config.domain.name == "Test Domain"
+      config = load_config()
+      assert config.fessBaseUrl == "http://localhost:8080"
+      assert config.domain.id == "test"
+      assert config.domain.name == "Test Domain"
