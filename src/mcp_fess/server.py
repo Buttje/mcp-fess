@@ -368,6 +368,7 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
 
     async def _handle_search(self, arguments: dict[str, Any]) -> str:
         """Handle search tool."""
+        logger.debug(f"MCP tool call: search args={arguments}")
         query = arguments.get("query")
         if not query:
             raise ValueError("query parameter is required")
@@ -412,10 +413,15 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
             lang=lang,
         )
 
-        return json.dumps(result, indent=2)
+        response = json.dumps(result, indent=2)
+        logger.debug(
+            f"MCP tool response: search hits={result.get('record_count', len(result.get('data', [])))}"
+        )
+        return response
 
     async def _handle_suggest(self, arguments: dict[str, Any]) -> str:
         """Handle suggest tool."""
+        logger.debug(f"MCP tool call: suggest args={arguments}")
         prefix = arguments.get("prefix")
         if not prefix:
             raise ValueError("prefix parameter is required")
@@ -438,10 +444,13 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
             lang=lang,
         )
 
-        return json.dumps(result, indent=2)
+        response = json.dumps(result, indent=2)
+        logger.debug(f"MCP tool response: suggest count={len(result.get('data', []))}")
+        return response
 
     async def _handle_popular_words(self, arguments: dict[str, Any]) -> str:
         """Handle popular words tool."""
+        logger.debug(f"MCP tool call: popular_words args={arguments}")
         seed = arguments.get("seed")
         field = arguments.get("field")
 
@@ -450,13 +459,16 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
 
         result = await self.fess_client.popular_words(label=label, seed=seed, field=field)
 
-        return json.dumps(result, indent=2)
+        response = json.dumps(result, indent=2)
+        logger.debug(f"MCP tool response: popular_words count={len(result.get('data', []))}")
+        return response
 
     async def _handle_list_labels(self) -> str:
         """Handle list labels tool.
 
         Returns merged catalog of labels from config and Fess with descriptions.
         """
+        logger.debug("MCP tool call: list_labels")
         # Get labels from Fess
         fess_labels_available = True
         try:
@@ -509,16 +521,22 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
             "fessAvailable": fess_labels_available,
         }
 
-        return json.dumps(result, indent=2)
+        response = json.dumps(result, indent=2)
+        logger.debug(f"MCP tool response: list_labels count={len(merged_labels)}")
+        return response
 
     async def _handle_health(self) -> str:
         """Handle health check tool."""
+        logger.debug("MCP tool call: health")
         result = await self.fess_client.health()
 
-        return json.dumps(result, indent=2)
+        response = json.dumps(result, indent=2)
+        logger.debug(f"MCP tool response: health status={result.get('status', 'unknown')}")
+        return response
 
     async def _handle_job_get(self, arguments: dict[str, Any]) -> str:
         """Handle job status query."""
+        logger.debug(f"MCP tool call: job_get args={arguments}")
         job_id = arguments.get("jobId")
         if not job_id:
             raise ValueError("jobId parameter is required")
@@ -532,6 +550,7 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
 
     async def _handle_fetch_content_chunk(self, arguments: dict[str, Any]) -> str:
         """Handle fetch content chunk tool."""
+        logger.debug(f"MCP tool call: fetch_content_chunk args={arguments}")
         doc_id = arguments.get("docId")
         if not doc_id:
             raise ValueError(
@@ -583,7 +602,12 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
                 "totalLength": len(content),
             }
 
-            return json.dumps(result, indent=2)
+            response = json.dumps(result, indent=2)
+            logger.debug(
+                f"MCP tool response: fetch_content_chunk doc_id={doc_id} "
+                f"offset={offset} length={len(chunk)} hasMore={has_more} totalLength={len(content)}"
+            )
+            return response
 
         except ValueError:
             # Re-raise ValueError with improved context
@@ -599,6 +623,7 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
 
     async def _handle_fetch_content_by_id(self, arguments: dict[str, Any]) -> str:
         """Handle fetch content by ID tool."""
+        logger.debug(f"MCP tool call: fetch_content_by_id args={arguments}")
         doc_id = arguments.get("docId")
         if not doc_id:
             raise ValueError(
@@ -638,7 +663,12 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
                     "to retrieve additional sections."
                 )
 
-            return json.dumps(result, indent=2)
+            response = json.dumps(result, indent=2)
+            logger.debug(
+                f"MCP tool response: fetch_content_by_id doc_id={doc_id} "
+                f"totalLength={original_length} truncated={was_truncated}"
+            )
+            return response
 
         except ValueError:
             # Re-raise ValueError with improved context

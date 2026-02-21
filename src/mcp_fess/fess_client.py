@@ -135,12 +135,16 @@ class FessClient:
                 params[key] = value
 
         url = urljoin(self.base_url, "/api/v1/documents")
-        logger.debug(f"Searching Fess: {url} with params: {params}")
+        logger.debug(f"Fess REST API call: GET {url} params={params}")
 
         try:
             response = await self.client.get(url, params=params)
             response.raise_for_status()
             result: dict[str, Any] = response.json()
+            logger.debug(
+                f"Fess REST API response: GET {url} status={response.status_code} "
+                f"hits={result.get('record_count', result.get('hit_count', len(result.get('data', []))))}"
+            )
             return result
         except httpx.HTTPError as e:
             logger.error(f"Fess search error: {e}")
@@ -165,12 +169,16 @@ class FessClient:
             params["lang"] = lang
 
         url = urljoin(self.base_url, "/api/v1/suggest-words")
-        logger.debug(f"Getting suggestions: {url} with params: {params}")
+        logger.debug(f"Fess REST API call: GET {url} params={params}")
 
         try:
             response = await self.client.get(url, params=params)
             response.raise_for_status()
             result: dict[str, Any] = response.json()
+            logger.debug(
+                f"Fess REST API response: GET {url} status={response.status_code} "
+                f"suggestions={len(result.get('data', []))}"
+            )
             return result
         except httpx.HTTPError as e:
             logger.error(f"Fess suggest error: {e}")
@@ -190,12 +198,16 @@ class FessClient:
             params["field"] = field
 
         url = urljoin(self.base_url, "/api/v1/popular-words")
-        logger.debug(f"Getting popular words: {url} with params: {params}")
+        logger.debug(f"Fess REST API call: GET {url} params={params}")
 
         try:
             response = await self.client.get(url, params=params)
             response.raise_for_status()
             result: dict[str, Any] = response.json()
+            logger.debug(
+                f"Fess REST API response: GET {url} status={response.status_code} "
+                f"words={len(result.get('data', []))}"
+            )
             return result
         except httpx.HTTPError as e:
             logger.error(f"Fess popular words error: {e}")
@@ -204,12 +216,16 @@ class FessClient:
     async def list_labels(self) -> dict[str, Any]:
         """List all labels in Fess."""
         url = urljoin(self.base_url, "/api/v1/labels")
-        logger.debug(f"Listing labels: {url}")
+        logger.debug(f"Fess REST API call: GET {url}")
 
         try:
             response = await self.client.get(url)
             response.raise_for_status()
             result: dict[str, Any] = response.json()
+            logger.debug(
+                f"Fess REST API response: GET {url} status={response.status_code} "
+                f"labels={len(result.get('data', []))}"
+            )
             return result
         except httpx.HTTPError as e:
             logger.error(f"Fess list labels error: {e}")
@@ -218,12 +234,16 @@ class FessClient:
     async def health(self) -> dict[str, Any]:
         """Check Fess health status."""
         url = urljoin(self.base_url, "/api/v1/health")
-        logger.debug(f"Checking health: {url}")
+        logger.debug(f"Fess REST API call: GET {url}")
 
         try:
             response = await self.client.get(url)
             response.raise_for_status()
             result: dict[str, Any] = response.json()
+            logger.debug(
+                f"Fess REST API response: GET {url} status={response.status_code} "
+                f"health={result.get('status', 'unknown')}"
+            )
             return result
         except httpx.HTTPError as e:
             logger.error(f"Fess health check error: {e}")
@@ -367,6 +387,12 @@ class FessClient:
                 "Document ID is required for content retrieval. "
                 "Content is now retrieved exclusively from the Fess index."
             )
+
+        scheme = url.split("://")[0].lower() if url and "://" in url else ""
+        logger.debug(
+            f"fetch_document_content called: url={url} doc_id={doc_id} url_scheme={scheme!r} "
+            f"(index-only retrieval; URL is not fetched)"
+        )
 
         logger.info(
             f"Fetching content from Fess index for doc_id={doc_id} (url={url}, source=fess_index)"
