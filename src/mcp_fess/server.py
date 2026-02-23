@@ -685,16 +685,17 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
         """Run server with stdio transport."""
         await self.mcp.run_stdio_async()
 
-    async def run_http(self) -> None:
+    async def run_http(self, port_override: int | None = None) -> None:
         """Run server with HTTP transport."""
         bind_addr = self.config.httpTransport.bindAddress
-        port = self.config.httpTransport.port
+        port = port_override if port_override is not None else self.config.httpTransport.port
         if port == 0:
             port = 3000
 
-        logger.info(f"Starting HTTP server on {bind_addr}:{port}{self.config.httpTransport.path}")
+        path = self.config.httpTransport.path
+        logger.info(f"Starting HTTP server on {bind_addr}:{port}{path}")
 
-        await self.mcp.run_http_async(host=bind_addr, port=port)
+        await self.mcp.run_http_async(host=bind_addr, port=port, path=path, stateless_http=True)
 
     async def cleanup(self) -> None:
         """Clean up resources."""
@@ -712,6 +713,12 @@ def main() -> None:
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument("--cody", action="store_true", help="Use MCP protocol version 2024-11-05")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="Port to listen on for HTTP transport (overrides config, default: 3000)",
+    )
 
     args = parser.parse_args()
 
@@ -744,7 +751,7 @@ def main() -> None:
                 if args.transport == "stdio":
                     await server.run_stdio()
                 else:
-                    await server.run_http()
+                    await server.run_http(port_override=args.port)
             finally:
                 await server.cleanup()
 

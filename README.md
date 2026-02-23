@@ -249,6 +249,12 @@ Debug logs are written to `~/.mcp-fess/log/<timestamp>_server.log` with elapsed 
 mcp-fess --transport http
 ```
 
+Use the optional `--port` flag to override the port from config (default: 3000):
+
+```bash
+mcp-fess --transport http --port 8080
+```
+
 ### Cody Mode (MCP 2024-11-05)
 
 ```bash
