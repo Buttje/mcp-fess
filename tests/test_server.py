@@ -691,3 +691,82 @@ async def test_handle_search_pagesize_exceeds_max(fess_server):
     ):
         await fess_server._handle_search({"query": "test", "pageSize": 101})
 
+
+def test_main_with_port_argument():
+    """Test main function with --port argument for HTTP transport."""
+    test_args = ["--transport", "http", "--port", "8080"]
+
+    with (
+        patch("sys.argv", ["mcp_fess", *test_args]),
+        patch("mcp_fess.server.load_config") as mock_load_config,
+        patch("mcp_fess.server.ensure_log_directory") as mock_log_dir,
+        patch("mcp_fess.server.setup_logging") as mock_setup_logging,
+        patch("asyncio.run") as mock_asyncio_run,
+    ):
+        mock_config = MagicMock()
+        mock_config.domain.name = "Test"
+        mock_config.domain.id = "test"
+        mock_config.fessBaseUrl = "http://localhost:8080"
+        mock_config.logging.level = "info"
+        mock_config.httpTransport.bindAddress = "127.0.0.1"
+        mock_config.security.allowNonLocalhostBind = False
+
+        mock_load_config.return_value = mock_config
+        mock_log_dir.return_value = MagicMock()
+        mock_setup_logging.return_value = (MagicMock(), None)
+
+        main()
+
+        mock_asyncio_run.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_run_http_uses_config_path(test_config):
+    """Test run_http passes path from config to run_http_async."""
+    test_config.httpTransport.port = 3000
+    test_config.httpTransport.path = "/mcp"
+    server = FessServer(test_config)
+
+    with patch.object(server.mcp, "run_http_async", new=AsyncMock()) as mock_run:
+        await server.run_http()
+        mock_run.assert_called_once_with(
+            host="127.0.0.1",
+            port=3000,
+            path="/mcp",
+            stateless_http=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_run_http_port_override(test_config):
+    """Test run_http uses port_override when provided."""
+    test_config.httpTransport.port = 3000
+    test_config.httpTransport.path = "/mcp"
+    server = FessServer(test_config)
+
+    with patch.object(server.mcp, "run_http_async", new=AsyncMock()) as mock_run:
+        await server.run_http(port_override=9000)
+        mock_run.assert_called_once_with(
+            host="127.0.0.1",
+            port=9000,
+            path="/mcp",
+            stateless_http=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_run_http_default_port(test_config):
+    """Test run_http defaults to port 3000 when config port is 0."""
+    test_config.httpTransport.port = 0
+    test_config.httpTransport.path = "/mcp"
+    server = FessServer(test_config)
+
+    with patch.object(server.mcp, "run_http_async", new=AsyncMock()) as mock_run:
+        await server.run_http()
+        mock_run.assert_called_once_with(
+            host="127.0.0.1",
+            port=3000,
+            path="/mcp",
+            stateless_http=True,
+        )
+
