@@ -835,3 +835,190 @@ async def test_run_http_default_port(test_config):
             stateless_http=True,
         )
 
+
+
+# --- Tests for snippet functionality ---
+
+
+@pytest.mark.asyncio
+async def test_handle_search_snippets_false_unchanged(fess_server):
+    """Test that snippets=False (default) returns unchanged results."""
+    mock_result = {"data": [{"doc_id": "abc", "title": "Test"}]}
+
+    with patch.object(fess_server.fess_client, "search", new=AsyncMock(return_value=mock_result)):
+        result = await fess_server._handle_search({"query": "test", "snippets": False})
+        parsed = json.loads(result)
+        assert "mcp_snippets" not in parsed["data"][0]
+
+
+@pytest.mark.asyncio
+async def test_handle_search_snippets_true_attaches_mcp_snippets(fess_server):
+    """Test that snippets=True attaches mcp_snippets to each enriched hit."""
+    text_content = "The quick brown fox jumps over the lazy dog"
+    mock_result = {"data": [{"doc_id": "abc123", "title": "Test"}]}
+    mock_text = text_content
+
+    with (
+        patch.object(fess_server.fess_client, "search", new=AsyncMock(return_value=mock_result)),
+        patch.object(
+            fess_server.fess_client,
+            "get_extracted_text_by_doc_id",
+            new=AsyncMock(return_value=mock_text),
+        ),
+    ):
+        result = await fess_server._handle_search({"query": "fox", "snippets": True})
+        parsed = json.loads(result)
+        doc = parsed["data"][0]
+        assert "mcp_snippets" in doc
+        assert "snippets" in doc["mcp_snippets"]
+        assert isinstance(doc["mcp_snippets"]["snippets"], list)
+        assert "effective_size_chars" in doc["mcp_snippets"]
+        assert "effective_fragments" in doc["mcp_snippets"]
+        assert "clamped" in doc["mcp_snippets"]
+        assert "source_field" in doc["mcp_snippets"]
+
+
+@pytest.mark.asyncio
+async def test_handle_search_snippets_highlight_applied(fess_server):
+    """Test that snippet text contains the highlight markup."""
+    mock_result = {"data": [{"doc_id": "abc123", "title": "Test"}]}
+    mock_text = "The quick brown fox jumps over the lazy dog"
+
+    with (
+        patch.object(fess_server.fess_client, "search", new=AsyncMock(return_value=mock_result)),
+        patch.object(
+            fess_server.fess_client,
+            "get_extracted_text_by_doc_id",
+            new=AsyncMock(return_value=mock_text),
+        ),
+    ):
+        result = await fess_server._handle_search({"query": "fox", "snippets": True})
+        parsed = json.loads(result)
+        snippets_list = parsed["data"][0]["mcp_snippets"]["snippets"]
+        combined = " ".join(snippets_list)
+        assert "<em>fox</em>" in combined
+
+
+@pytest.mark.asyncio
+async def test_handle_search_snippets_only_first_n_docs_enriched(fess_server):
+    """Test that only snippet_docs hits are enriched with snippets."""
+    mock_result = {
+        "data": [
+            {"doc_id": "doc1", "title": "Doc 1"},
+            {"doc_id": "doc2", "title": "Doc 2"},
+            {"doc_id": "doc3", "title": "Doc 3"},
+        ]
+    }
+    mock_text = "test content with relevant info"
+
+    get_text_mock = AsyncMock(return_value=mock_text)
+
+    with (
+        patch.object(fess_server.fess_client, "search", new=AsyncMock(return_value=mock_result)),
+        patch.object(
+            fess_server.fess_client, "get_extracted_text_by_doc_id", new=get_text_mock
+        ),
+    ):
+        result = await fess_server._handle_search(
+            {"query": "test", "snippets": True, "snippet_docs": 2}
+        )
+        parsed = json.loads(result)
+        assert "mcp_snippets" in parsed["data"][0]
+        assert "mcp_snippets" in parsed["data"][1]
+        assert "mcp_snippets" not in parsed["data"][2]
+        # Only 2 fetch calls made
+        assert get_text_mock.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_handle_search_snippets_fetch_error_produces_error_field(fess_server):
+    """Test that a fetch error for snippets produces an error field, not an exception."""
+    mock_result = {"data": [{"doc_id": "doc1", "title": "Doc 1"}]}
+
+    with (
+        patch.object(fess_server.fess_client, "search", new=AsyncMock(return_value=mock_result)),
+        patch.object(
+            fess_server.fess_client,
+            "get_extracted_text_by_doc_id",
+            new=AsyncMock(side_effect=ValueError("not found")),
+        ),
+    ):
+        result = await fess_server._handle_search({"query": "test", "snippets": True})
+        parsed = json.loads(result)
+        assert "mcp_snippets" in parsed["data"][0]
+        assert "error" in parsed["data"][0]["mcp_snippets"]
+
+
+@pytest.mark.asyncio
+async def test_handle_search_snippets_clamping(fess_server):
+    """Test that snippet params exceeding limits are clamped."""
+    mock_result = {"data": [{"doc_id": "doc1", "title": "Doc 1"}]}
+    mock_text = "test content"
+
+    with (
+        patch.object(fess_server.fess_client, "search", new=AsyncMock(return_value=mock_result)),
+        patch.object(
+            fess_server.fess_client,
+            "get_extracted_text_by_doc_id",
+            new=AsyncMock(return_value=mock_text),
+        ),
+    ):
+        result = await fess_server._handle_search(
+            {
+                "query": "test",
+                "snippets": True,
+                "snippet_size_chars": 99999,  # exceeds max
+                "snippet_fragments": 99,  # exceeds max
+            }
+        )
+        parsed = json.loads(result)
+        snippet_meta = parsed["data"][0]["mcp_snippets"]
+        assert snippet_meta["clamped"] is True
+        limits = fess_server.config.limits
+        assert snippet_meta["effective_size_chars"] == limits.snippetMaxChars
+        assert snippet_meta["effective_fragments"] == limits.snippetMaxFragments
+
+
+def test_validate_and_clamp_snippet_args_defaults(fess_server):
+    """Test that defaults are applied when no snippet args given."""
+    params = fess_server._validate_and_clamp_snippet_args({})
+    limits = fess_server.config.limits
+    assert params["snippet_size_chars"] == limits.snippetDefaultChars
+    assert params["snippet_fragments"] == limits.snippetDefaultFragments
+    assert params["snippet_docs"] == limits.snippetDefaultDocs
+    assert params["snippet_scan_max_chars"] == limits.snippetScanMaxChars
+    assert params["snippet_tag_pre"] == "<em>"
+    assert params["snippet_tag_post"] == "</em>"
+    assert params["clamped"] is False
+
+
+def test_validate_and_clamp_snippet_args_clamps_size(fess_server):
+    """Test size clamping."""
+    limits = fess_server.config.limits
+    # Too large
+    params = fess_server._validate_and_clamp_snippet_args({"snippet_size_chars": 999999})
+    assert params["snippet_size_chars"] == limits.snippetMaxChars
+    assert params["clamped"] is True
+    # Too small
+    params = fess_server._validate_and_clamp_snippet_args({"snippet_size_chars": 1})
+    assert params["snippet_size_chars"] == limits.snippetMinChars
+    assert params["clamped"] is True
+
+
+def test_validate_and_clamp_snippet_args_invalid_type(fess_server):
+    """Test that invalid types raise ValueError."""
+    with pytest.raises(ValueError, match="snippet_size_chars must be a positive integer"):
+        fess_server._validate_and_clamp_snippet_args({"snippet_size_chars": "large"})
+    with pytest.raises(ValueError, match="snippet_fragments must be a positive integer"):
+        fess_server._validate_and_clamp_snippet_args({"snippet_fragments": -1})
+    with pytest.raises(ValueError, match="snippet_docs must be a positive integer"):
+        fess_server._validate_and_clamp_snippet_args({"snippet_docs": 0})
+
+
+def test_validate_and_clamp_snippet_args_custom_tags(fess_server):
+    """Test custom tags are passed through."""
+    params = fess_server._validate_and_clamp_snippet_args(
+        {"snippet_tag_pre": "<mark>", "snippet_tag_post": "</mark>"}
+    )
+    assert params["snippet_tag_pre"] == "<mark>"
+    assert params["snippet_tag_post"] == "</mark>"
