@@ -1,5 +1,6 @@
 """Tests for the server module."""
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -84,6 +85,24 @@ async def test_handle_search_success(fess_server):
         result = await fess_server._handle_search({"query": "test"})
         assert isinstance(result, str)
         assert "Test" in result
+
+
+@pytest.mark.asyncio
+async def test_handle_search_strips_solr_id(fess_server):
+    """Test that _id (Solr internal ID) is removed from search results."""
+    mock_result = {
+        "data": [
+            {"_id": "solr-internal-id", "doc_id": "abc123", "title": "Test Doc"},
+            {"_id": "another-solr-id", "doc_id": "def456", "title": "Another Doc"},
+        ]
+    }
+
+    with patch.object(fess_server.fess_client, "search", new=AsyncMock(return_value=mock_result)):
+        result = await fess_server._handle_search({"query": "test"})
+        parsed = json.loads(result)
+        for doc in parsed["data"]:
+            assert "_id" not in doc
+            assert "doc_id" in doc
 
 
 @pytest.mark.asyncio

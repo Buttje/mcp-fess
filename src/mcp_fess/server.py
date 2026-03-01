@@ -413,6 +413,10 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
             lang=lang,
         )
 
+        # Remove Solr internal _id from each document to avoid agent misinterpretation
+        for doc in result.get("data", []):
+            doc.pop("_id", None)
+
         response = json.dumps(result, indent=2)
         logger.debug(
             f"MCP tool response: search hits={result.get('record_count', len(result.get('data', [])))}"
