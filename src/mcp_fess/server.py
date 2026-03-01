@@ -579,10 +579,8 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
         # Enforce maxChunkBytes limit on length
         max_chunk_bytes = self.config.limits.maxChunkBytes
         if length > max_chunk_bytes:
-            length = max_chunk_bytes
-            logger.debug(
-                f"Requested length {arguments.get('length')} exceeds maxChunkBytes, "
-                f"capping at {max_chunk_bytes}"
+            raise ValueError(
+                f"Requested chunk size {length} exceeds server limit {max_chunk_bytes}."
             )
 
         try:
@@ -604,6 +602,9 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
                 "offset": offset,
                 "length": len(chunk),
                 "totalLength": len(content),
+                "metadata": {
+                    "max_chunk_size": max_chunk_bytes,
+                },
             }
 
             response = json.dumps(result, indent=2)
@@ -657,6 +658,9 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
                 "content": truncated_content,
                 "totalLength": original_length,  # Full document length
                 "truncated": was_truncated,
+                "metadata": {
+                    "max_chunk_size": max_bytes,
+                },
             }
 
             if was_truncated:
