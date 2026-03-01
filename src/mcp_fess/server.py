@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import logging
+import re
 import sys
 from typing import Any
 
@@ -14,6 +15,137 @@ from .fess_client import FessClient
 from .logging_utils import setup_logging
 
 logger = logging.getLogger("mcp_fess")
+
+
+def _extract_query_terms(query: str) -> list[str]:
+    """Extract searchable terms from a query string, stripping operators and punctuation."""
+    cleaned = re.sub(r"\b(AND|OR|NOT)\b", " ", query, flags=re.IGNORECASE)
+    cleaned = cleaned.replace('"', "").replace("'", "")
+    terms = []
+    for token in cleaned.split():
+        token = token.strip(".,;:!?()[]{}|\\")
+        if token and len(token) > 1:
+            terms.append(token)
+    return terms
+
+
+def _apply_highlight(fragment: str, terms: list[str], tag_pre: str, tag_post: str) -> str:
+    """Apply highlight tags to matched terms in fragment, longest terms first, no overlaps."""
+    if not terms:
+        return fragment
+
+    fragment_lower = fragment.lower()
+    spans: list[tuple[int, int]] = []
+
+    for term in sorted(terms, key=len, reverse=True):
+        term_lower = term.lower()
+        pos = 0
+        while pos < len(fragment):
+            idx = fragment_lower.find(term_lower, pos)
+            if idx == -1:
+                break
+            end = idx + len(term)
+            # Skip if overlaps with an already-placed span
+            if all(e <= idx or s >= end for s, e in spans):
+                spans.append((idx, end))
+            pos = idx + 1
+
+    if not spans:
+        return fragment
+
+    spans.sort()
+    result = []
+    pos = 0
+    for start, end in spans:
+        result.append(fragment[pos:start])
+        result.append(tag_pre + fragment[start:end] + tag_post)
+        pos = end
+    result.append(fragment[pos:])
+    return "".join(result)
+
+
+def _generate_snippets(
+    text: str,
+    query_terms: list[str],
+    size_chars: int,
+    max_fragments: int,
+    tag_pre: str,
+    tag_post: str,
+    scan_max_chars: int,
+) -> list[str]:
+    """Generate highlighted text snippets client-side from index text.
+
+    Scans the first scan_max_chars of text for query term occurrences,
+    builds windows of size_chars around each match, applies highlight markup,
+    and deduplicates overlapping windows.
+    """
+    if not text:
+        return []
+
+    if not query_terms:
+        fragment = text[:size_chars]
+        suffix = "\u2026" if len(text) > size_chars else ""
+        return [fragment + suffix]
+
+    text_lower = text.lower()
+    scan_limit = min(len(text), scan_max_chars)
+
+    # Collect match positions within the scan window (stop early if enough found)
+    match_positions: list[int] = []
+    seen: set[int] = set()
+
+    for term in query_terms:
+        term_lower = term.lower()
+        pos = 0
+        while pos < scan_limit and len(match_positions) < max_fragments * 5:
+            idx = text_lower.find(term_lower, pos, scan_limit)
+            if idx == -1:
+                break
+            if idx not in seen:
+                match_positions.append(idx)
+                seen.add(idx)
+            pos = idx + 1
+
+    if not match_positions:
+        # No matches - return start of text as fallback
+        fragment = text[:size_chars]
+        suffix = "\u2026" if len(text) > size_chars else ""
+        return [fragment + suffix]
+
+    match_positions.sort()
+
+    # Build non-overlapping windows around matches
+    windows: list[tuple[int, int]] = []
+    last_win_end = -1
+
+    for match_pos in match_positions:
+        half = size_chars // 2
+        win_start = max(0, match_pos - half)
+        win_end = min(len(text), win_start + size_chars)
+        # Adjust window if we bumped into the end
+        if win_end - win_start < size_chars:
+            win_start = max(0, win_end - size_chars)
+
+        # Skip windows that overlap with the previous one
+        if win_start < last_win_end:
+            continue
+
+        windows.append((win_start, win_end))
+        last_win_end = win_end
+
+        if len(windows) >= max_fragments:
+            break
+
+    # Build highlighted fragments
+    fragments = []
+    for win_start, win_end in windows:
+        fragment = text[win_start:win_end]
+        prefix = "\u2026" if win_start > 0 else ""
+        suffix = "\u2026" if win_end < len(text) else ""
+        highlighted = _apply_highlight(fragment, query_terms, tag_pre, tag_post)
+        fragments.append(prefix + highlighted + suffix)
+
+    return fragments
 
 
 class FessServer:
@@ -82,6 +214,13 @@ fessLabel: {domain.labelFilter}"""
             sort: str | None = None,
             lang: str | None = None,
             include_fields: list[str] | None = None,
+            snippets: bool = False,
+            snippet_size_chars: int | None = None,
+            snippet_fragments: int | None = None,
+            snippet_docs: int | None = None,
+            snippet_tag_pre: str = "<em>",
+            snippet_tag_post: str = "</em>",
+            snippet_scan_max_chars: int | None = None,
         ) -> str:
             return await self._handle_search(
                 {
@@ -92,6 +231,13 @@ fessLabel: {domain.labelFilter}"""
                     "sort": sort,
                     "lang": lang,
                     "includeFields": include_fields,
+                    "snippets": snippets,
+                    "snippet_size_chars": snippet_size_chars,
+                    "snippet_fragments": snippet_fragments,
+                    "snippet_docs": snippet_docs,
+                    "snippet_tag_pre": snippet_tag_pre,
+                    "snippet_tag_post": snippet_tag_post,
+                    "snippet_scan_max_chars": snippet_scan_max_chars,
                 }
             )
 
@@ -105,16 +251,28 @@ Use this first to turn a keyword/question into a shortlist of candidate document
 
 **Performance:** Use `include_fields` to limit payload to the fields you need.
 
+**Snippets (optional):** Set `snippets=true` to attach client-side generated text snippets to each hit.
+Snippets are generated by mcp-fess from index text (priority: `content` → `body` → `digest`);
+they are NOT Fess highlight fragments. Snippet size and count are clamped to configured limits.
+For long-form evidence, prefer `fetch_content_chunk` instead.
+
 Args:
     query: Search term
     label: Label value to scope the search (default uses configured defaultLabel).
            Use 'all' to search across the entire index without label filtering.
            Call list_labels to see available labels.
-    page_size: Number of results per page (default 20, max 100)
+    page_size: Number of results per page (default 20, max {self.config.limits.maxPageSize})
     start: Starting index for pagination (default 0)
     sort: Sort order
     lang: Search language
-    include_fields: Fields to include in results"""
+    include_fields: Fields to include in results
+    snippets: Set to true to attach generated snippets to each hit (default false)
+    snippet_size_chars: Desired chars per snippet fragment (clamped to [{self.config.limits.snippetMinChars}, {self.config.limits.snippetMaxChars}], default {self.config.limits.snippetDefaultChars})
+    snippet_fragments: Max fragments per hit (clamped to [1, {self.config.limits.snippetMaxFragments}], default {self.config.limits.snippetDefaultFragments})
+    snippet_docs: Max hits to enrich with snippets (clamped to [1, {self.config.limits.snippetMaxDocs}], default {self.config.limits.snippetDefaultDocs})
+    snippet_tag_pre: Opening highlight tag (default '<em>')
+    snippet_tag_post: Closing highlight tag (default '</em>')
+    snippet_scan_max_chars: Max chars of document text to scan for matches (default {self.config.limits.snippetScanMaxChars})"""
 
         @self.mcp.tool(name=f"fess_{self.domain_id}_suggest")
         async def suggest(
@@ -324,6 +482,82 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
         # Set dynamic descriptor for read_labels resource
         read_labels.__doc__ = """Available Fess labels with descriptions."""
 
+    def _validate_and_clamp_snippet_args(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Validate and clamp snippet generation arguments against configured limits.
+
+        Returns a dict with effective (clamped) values ready for use.
+        """
+        limits = self.config.limits
+        clamped = False
+
+        # snippet_size_chars
+        raw_size = arguments.get("snippet_size_chars")
+        if raw_size is None:
+            effective_size = limits.snippetDefaultChars
+        else:
+            if not isinstance(raw_size, int) or raw_size < 1:
+                raise ValueError("snippet_size_chars must be a positive integer")
+            if raw_size < limits.snippetMinChars:
+                effective_size = limits.snippetMinChars
+                clamped = True
+            elif raw_size > limits.snippetMaxChars:
+                effective_size = limits.snippetMaxChars
+                clamped = True
+            else:
+                effective_size = raw_size
+
+        # snippet_fragments
+        raw_fragments = arguments.get("snippet_fragments")
+        if raw_fragments is None:
+            effective_fragments = limits.snippetDefaultFragments
+        else:
+            if not isinstance(raw_fragments, int) or raw_fragments < 1:
+                raise ValueError("snippet_fragments must be a positive integer")
+            if raw_fragments > limits.snippetMaxFragments:
+                effective_fragments = limits.snippetMaxFragments
+                clamped = True
+            else:
+                effective_fragments = raw_fragments
+
+        # snippet_docs
+        raw_docs = arguments.get("snippet_docs")
+        if raw_docs is None:
+            effective_docs = limits.snippetDefaultDocs
+        else:
+            if not isinstance(raw_docs, int) or raw_docs < 1:
+                raise ValueError("snippet_docs must be a positive integer")
+            if raw_docs > limits.snippetMaxDocs:
+                effective_docs = limits.snippetMaxDocs
+                clamped = True
+            else:
+                effective_docs = raw_docs
+
+        # snippet_scan_max_chars
+        raw_scan = arguments.get("snippet_scan_max_chars")
+        if raw_scan is None:
+            effective_scan = limits.snippetScanMaxChars
+        else:
+            if not isinstance(raw_scan, int) or raw_scan < 1:
+                raise ValueError("snippet_scan_max_chars must be a positive integer")
+            if raw_scan > limits.snippetScanMaxChars:
+                effective_scan = limits.snippetScanMaxChars
+                clamped = True
+            else:
+                effective_scan = raw_scan
+
+        tag_pre = arguments.get("snippet_tag_pre", "<em>")
+        tag_post = arguments.get("snippet_tag_post", "</em>")
+
+        return {
+            "snippet_size_chars": effective_size,
+            "snippet_fragments": effective_fragments,
+            "snippet_docs": effective_docs,
+            "snippet_scan_max_chars": effective_scan,
+            "snippet_tag_pre": tag_pre,
+            "snippet_tag_post": tag_post,
+            "clamped": clamped,
+        }
+
     async def _validate_label(self, label: str) -> None:
         """Validate that a label is allowed.
 
@@ -416,6 +650,48 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
         # Remove Solr internal _id from each document to avoid agent misinterpretation
         for doc in result.get("data", []):
             doc.pop("_id", None)
+
+        # Optionally enrich hits with client-side generated snippets
+        if arguments.get("snippets"):
+            snippet_params = self._validate_and_clamp_snippet_args(arguments)
+            hits = result.get("data", [])
+            enrichable_hits = hits[: snippet_params["snippet_docs"]]
+            query_terms = _extract_query_terms(query)
+
+            semaphore = asyncio.Semaphore(self.config.limits.maxInFlightRequests)
+
+            async def _enrich_hit(hit: dict[str, Any]) -> None:
+                async with semaphore:
+                    doc_id = hit.get("doc_id")
+                    if not doc_id:
+                        return
+                    try:
+                        text = await self.fess_client.get_extracted_text_by_doc_id(
+                            doc_id, label_filter=label_filter
+                        )
+                        snippets_list = _generate_snippets(
+                            text=text,
+                            query_terms=query_terms,
+                            size_chars=snippet_params["snippet_size_chars"],
+                            max_fragments=snippet_params["snippet_fragments"],
+                            tag_pre=snippet_params["snippet_tag_pre"],
+                            tag_post=snippet_params["snippet_tag_post"],
+                            scan_max_chars=snippet_params["snippet_scan_max_chars"],
+                        )
+                        hit["mcp_snippets"] = {
+                            "requested_size_chars": arguments.get("snippet_size_chars"),
+                            "effective_size_chars": snippet_params["snippet_size_chars"],
+                            "requested_fragments": arguments.get("snippet_fragments"),
+                            "effective_fragments": snippet_params["snippet_fragments"],
+                            "source_field": "content/body/digest",
+                            "snippets": snippets_list,
+                            "clamped": snippet_params["clamped"],
+                        }
+                    except Exception as e:
+                        logger.warning(f"Failed to generate snippets for doc_id={doc_id}: {e}")
+                        hit["mcp_snippets"] = {"error": str(e)}
+
+            await asyncio.gather(*[_enrich_hit(hit) for hit in enrichable_hits])
 
         response = json.dumps(result, indent=2)
         logger.debug(

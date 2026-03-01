@@ -50,6 +50,16 @@ class LimitsConfig(BaseModel):
     maxChunkBytes: int = 1048576  # 1 MiB - allows agents to retrieve larger sections
     maxInFlightRequests: int = 32
 
+    # Snippet controls
+    snippetMinChars: int = 20
+    snippetMaxChars: int = 2000
+    snippetDefaultChars: int = 200
+    snippetDefaultFragments: int = 2
+    snippetMaxFragments: int = 5
+    snippetDefaultDocs: int = 5
+    snippetMaxDocs: int = 20
+    snippetScanMaxChars: int = 200_000
+
 
 class LoggingConfig(BaseModel):
     """Logging configuration."""

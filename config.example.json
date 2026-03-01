@@ -37,7 +37,15 @@
   "limits": {
     "maxPageSize": 100,
     "maxChunkBytes": 1048576,
-    "maxInFlightRequests": 32
+    "maxInFlightRequests": 32,
+    "snippetMinChars": 20,
+    "snippetMaxChars": 2000,
+    "snippetDefaultChars": 200,
+    "snippetDefaultFragments": 2,
+    "snippetMaxFragments": 5,
+    "snippetDefaultDocs": 5,
+    "snippetMaxDocs": 20,
+    "snippetScanMaxChars": 200000
   },
   "logging": {
     "level": "info",
