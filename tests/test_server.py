@@ -703,6 +703,52 @@ async def test_handle_fetch_content_chunk_default_length(fess_server):
 
 
 @pytest.mark.asyncio
+async def test_handle_fetch_content_chunk_exceeds_max_chunk_size(fess_server):
+    """Test fetch_content_chunk handler returns error when length exceeds maxChunkBytes."""
+    max_chunk = fess_server.config.limits.maxChunkBytes
+    with pytest.raises(ValueError, match=f"Requested chunk size {max_chunk + 1} exceeds server limit {max_chunk}."):
+        await fess_server._handle_fetch_content_chunk(
+            {"docId": "test_doc", "offset": 0, "length": max_chunk + 1}
+        )
+
+
+@pytest.mark.asyncio
+async def test_handle_fetch_content_chunk_includes_metadata(fess_server):
+    """Test fetch_content_chunk response includes metadata with max_chunk_size."""
+    test_content = "A" * 500
+    mock_search_result = {
+        "data": [{"doc_id": "test_doc", "content": test_content}]
+    }
+
+    with patch.object(
+        fess_server.fess_client, "search", new=AsyncMock(return_value=mock_search_result)
+    ):
+        result = await fess_server._handle_fetch_content_chunk(
+            {"docId": "test_doc", "offset": 0, "length": 200}
+        )
+        parsed = json.loads(result)
+        assert "metadata" in parsed
+        assert parsed["metadata"]["max_chunk_size"] == fess_server.config.limits.maxChunkBytes
+
+
+@pytest.mark.asyncio
+async def test_handle_fetch_content_by_id_includes_metadata(fess_server):
+    """Test fetch_content_by_id response includes metadata with max_chunk_size."""
+    test_content = "Hello world"
+    mock_search_result = {
+        "data": [{"doc_id": "test_doc", "content": test_content}]
+    }
+
+    with patch.object(
+        fess_server.fess_client, "search", new=AsyncMock(return_value=mock_search_result)
+    ):
+        result = await fess_server._handle_fetch_content_by_id({"docId": "test_doc"})
+        parsed = json.loads(result)
+        assert "metadata" in parsed
+        assert parsed["metadata"]["max_chunk_size"] == fess_server.config.limits.maxChunkBytes
+
+
+@pytest.mark.asyncio
 async def test_handle_search_pagesize_exceeds_max(fess_server):
     """Test search handler with pageSize exceeding maxPageSize."""
     with pytest.raises(
