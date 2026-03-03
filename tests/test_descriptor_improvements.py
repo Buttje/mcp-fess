@@ -121,3 +121,23 @@ def test_descriptor_text_source_mentions_priority(fess_server):
     assert "content" in text_source
     assert "body" in text_source
     assert "digest" in text_source
+
+
+def test_descriptor_workflow_mentions_image_markers(fess_server):
+    """Test that workflow descriptor mentions IMAGE markers in text content."""
+    workflow = fess_server._descriptor_workflow()
+    assert "<IMAGE:" in workflow
+    assert "local filesystem" in workflow or "filesystem" in workflow
+
+
+def test_descriptor_workflow_mentions_get_original_doc(fess_server):
+    """Test that workflow descriptor includes get_original_doc tool."""
+    workflow = fess_server._descriptor_workflow()
+    assert "get_original_doc" in workflow
+
+
+def test_descriptor_text_source_mentions_image_markers(fess_server):
+    """Test that text source descriptor mentions IMAGE markers."""
+    text_source = fess_server._descriptor_text_source()
+    assert "<IMAGE:" in text_source
+    assert "local filesystem" in text_source or "filesystem" in text_source
