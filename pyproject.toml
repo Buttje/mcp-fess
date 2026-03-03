@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcp-fess"
-version = "0.1.0"
+version = "2.0.0"
 description = "An MCP Server for Fess"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -29,6 +29,9 @@ dependencies = [
     "httpx>=0.27.0",
     "beautifulsoup4>=4.12.0",
     "pypdf>=5.0.0",
+    "PyYAML>=6.0.0",
+    "PyMuPDF>=1.24.0",
+    "python-docx>=1.1.0",
 ]
 
 [project.optional-dependencies]
@@ -48,6 +51,7 @@ Issues = "https://github.com/Buttje/mcp-fess/issues"
 
 [project.scripts]
 mcp-fess = "mcp_fess.server:main"
+mcp-fess-snippets = "mcp_fess.snippet_engine.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -107,6 +111,10 @@ strict_concatenate = true
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "fitz"
+ignore_missing_imports = true
 
 # Pytest configuration
 [tool.pytest.ini_options]
