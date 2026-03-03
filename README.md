@@ -292,6 +292,30 @@ MCP-Fess provides a structured workflow for agents to efficiently search and ret
 - Use chunking for large documents instead of fetching entire content at once
 - Leverage labels to scope searches and reduce result sets
 
+## Snippet Engine
+
+The snippet engine converts source documents into small Markdown files suitable for Fess indexing.
+
+### New Config Keys
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `fessComposePath` | `null` | Path to your docker-compose file (required for snippet tools) |
+| `fessComposeService` | `null` | Service name in compose file (auto-detected if null) |
+| `fessDataMount` | `/data/fess` | Container-side mount path for Fess data |
+| `originalPathField` | `url` | Fess field containing the original document path |
+
+### CLI Usage
+
+```bash
+mcp-fess-snippets --input /path/to/docs --output-folder MY_DOCS [--include '**/*.pdf'] [--exclude '**/*.tmp'] [--verbose]
+```
+
+### MCP Tools
+
+- **`fess_<domain>_get_original_doc`** — Retrieve the original filesystem path for an indexed document by ID.
+- **`fess_<domain>_generate_snippets`** — Scan a directory, convert documents to Markdown snippets, and write them under the configured Fess data mount.
+
 ## MCP Tools
 
 The server exposes the following tools (prefixed with `fess_<domain_id>_`):

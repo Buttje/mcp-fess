@@ -93,9 +93,7 @@ class ServerConfig(BaseModel):
 
     fessBaseUrl: str
     domain: DomainConfig = Field(
-        default_factory=lambda: DomainConfig(
-            id="default", name="Default Domain", description=None
-        )
+        default_factory=lambda: DomainConfig(id="default", name="Default Domain", description=None)
     )
     labels: dict[str, LabelDescriptor] = Field(default_factory=dict)
     defaultLabel: str = "all"
@@ -106,6 +104,18 @@ class ServerConfig(BaseModel):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     contentFetch: ContentFetchConfig = Field(default_factory=ContentFetchConfig)
+    fessComposePath: str | None = None
+    fessComposeService: str | None = None
+    fessDataMount: str = "/data/fess"
+    originalPathField: str = "url"
+
+    @field_validator("fessComposePath")
+    @classmethod
+    def validate_compose_path(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        p = Path(v).resolve()
+        return str(p)
 
     @field_validator("fessBaseUrl")
     @classmethod

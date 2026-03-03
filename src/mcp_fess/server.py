@@ -148,6 +148,23 @@ def _generate_snippets(
     return fragments
 
 
+def _file_url_to_path(value: str) -> str:
+    """Convert a file:// URL to an OS filesystem path string."""
+    if value.startswith("file://"):
+        from urllib.parse import unquote, urlparse
+
+        parsed = urlparse(value)
+        netloc = parsed.netloc
+        path = unquote(parsed.path)
+        # UNC path: file://server/share/path -> //server/share/path; local: just path
+        full_path = "//" + netloc + path if netloc else path
+        # Handle Windows absolute paths like /C:/foo -> C:/foo
+        if full_path.startswith("/") and len(full_path) > 2 and full_path[2] == ":":
+            full_path = full_path[1:]
+        return full_path
+    return value
+
+
 class FessServer:
     """MCP server implementation for Fess."""
 
@@ -409,6 +426,59 @@ Returns:
     - 'length': Actual length of returned content
     - 'totalLength': Total document length in characters"""
 
+        @self.mcp.tool(name=f"fess_{self.domain_id}_get_original_doc")
+        async def get_original_doc(document_id: str) -> str:
+            return await self._handle_get_original_doc({"documentId": document_id})
+
+        get_original_doc.__doc__ = """Retrieve the original filesystem path for a document indexed by Fess.
+
+Queries Fess for the document with the given ID and returns the value of the
+configured `originalPathField` (default: 'url') as an absolute filesystem path.
+If the value is a `file://` URL it is converted to an OS path.
+
+Args:
+    document_id: The Fess document ID (from search results)
+
+Returns:
+    JSON with:
+    - 'original_path': Absolute filesystem path of the original document"""
+
+        @self.mcp.tool(name=f"fess_{self.domain_id}_generate_snippets")
+        async def generate_snippets(
+            input_dir: str,
+            output_folder: str,
+            include_globs: list[str] | None = None,
+            exclude_globs: list[str] | None = None,
+        ) -> str:
+            return await self._handle_generate_snippets(
+                {
+                    "inputDir": input_dir,
+                    "outputFolder": output_folder,
+                    "includeGlobs": include_globs,
+                    "excludeGlobs": exclude_globs,
+                }
+            )
+
+        generate_snippets.__doc__ = """Generate Markdown snippets from source documents for Fess indexing.
+
+Scans the input directory recursively, converts supported documents to Markdown snippets
+(each < 10 MiB), extracts images, and writes output under the configured host data mount.
+
+Requires `fessComposePath` to be set in config.
+
+Args:
+    input_dir: Absolute path to the directory containing source documents
+    output_folder: Folder name under the host Fess data mount (e.g. 'ABCD')
+    include_globs: Optional glob patterns to include (e.g. ['**/*.pdf', '**/*.docx'])
+    exclude_globs: Optional glob patterns to exclude
+
+Returns:
+    JSON with:
+    - 'processed': Number of successfully processed files
+    - 'failed': Number of failed files
+    - 'output_root': Path to the snippets output directory
+    - 'manifest_path': Path to the manifest.jsonl file"""
+
     def _setup_resources(self) -> None:
         """Set up MCP resources using FastMCP decorators."""
 
@@ -591,9 +661,7 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
 
         # Label not found
         if self.config.strictLabels:
-            raise ValueError(
-                f"Unknown label '{label}'. Call list_labels to see available labels."
-            )
+            raise ValueError(f"Unknown label '{label}'. Call list_labels to see available labels.")
         else:
             logger.warning(
                 f"Label '{label}' is not configured and may not exist in Fess. "
@@ -612,8 +680,7 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
             raise ValueError("pageSize must be a positive integer")
         if page_size > self.config.limits.maxPageSize:
             raise ValueError(
-                f"pageSize must be between 1 and {self.config.limits.maxPageSize}, "
-                f"got {page_size}"
+                f"pageSize must be between 1 and {self.config.limits.maxPageSize}, got {page_size}"
             )
 
         start = arguments.get("start", 0)
@@ -984,6 +1051,115 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
     async def cleanup(self) -> None:
         """Clean up resources."""
         await self.fess_client.close()
+
+    async def _handle_get_original_doc(self, arguments: dict[str, Any]) -> str:
+        """Handle getOriginalDoc tool call."""
+        doc_id = arguments.get("documentId", "")
+        if not doc_id:
+            return json.dumps({"error": "documentId is required"})
+
+        original_path_field = self.config.originalPathField
+
+        try:
+            result = await self.fess_client.search(
+                query=f"doc_id:{doc_id}",
+                label_filter=None,
+                num=1,
+                start=0,
+            )
+            docs = result.get("data", [])
+            if not docs:
+                return json.dumps({"error": f"Document not found: {doc_id}"})
+
+            doc = docs[0]
+            raw_value = doc.get(original_path_field, "")
+            if not raw_value:
+                return json.dumps({"error": f"Field '{original_path_field}' not found in document"})
+
+            # Convert file:// URL to filesystem path
+            original_path = _file_url_to_path(str(raw_value))
+            return json.dumps({"original_path": original_path})
+
+        except Exception as e:
+            logger.error(f"Failed to get original doc path: {e}")
+            return json.dumps({"error": str(e)})
+
+    async def _handle_generate_snippets(self, arguments: dict[str, Any]) -> str:
+        """Handle generateSnippets tool call."""
+        input_dir_str = arguments.get("inputDir", "")
+        output_folder = arguments.get("outputFolder", "")
+        include_globs = arguments.get("includeGlobs")
+        exclude_globs = arguments.get("excludeGlobs")
+
+        if not input_dir_str:
+            return json.dumps({"error": "inputDir is required"})
+        if not output_folder:
+            return json.dumps({"error": "outputFolder is required"})
+
+        if not self.config.fessComposePath:
+            return json.dumps({"error": "fessComposePath is not configured"})
+
+        try:
+            from pathlib import Path as _Path
+
+            from .snippet_engine.compose_parser import find_host_fess_data_dir
+            from .snippet_engine.convert import convert_document
+            from .snippet_engine.image_store import compute_doc_hash
+            from .snippet_engine.manifest import append_manifest_entry
+            from .snippet_engine.md_writer import write_snippets
+            from .snippet_engine.scan import scan_directory
+
+            host_data_dir = find_host_fess_data_dir(
+                self.config.fessComposePath,
+                service_name=self.config.fessComposeService,
+                container_mount=self.config.fessDataMount,
+            )
+
+            snippets_root = host_data_dir / output_folder
+            images_root = snippets_root / "images"
+            snippets_root.mkdir(parents=True, exist_ok=True)
+            images_root.mkdir(parents=True, exist_ok=True)
+
+            input_dir = _Path(input_dir_str).resolve()
+            files = scan_directory(
+                input_dir, include_globs=include_globs, exclude_globs=exclude_globs
+            )
+
+            manifest_path = snippets_root / "manifest.jsonl"
+            processed = 0
+            failed = 0
+
+            for file_path in files:
+                doc_hash = compute_doc_hash(file_path)
+                warnings_list: list[str] = []
+                try:
+                    page_lines, images = convert_document(file_path, images_root, doc_hash)
+                    parts = write_snippets(file_path, page_lines, snippets_root, doc_hash)
+                    append_manifest_entry(
+                        manifest_path, file_path, doc_hash, parts, images, warnings_list
+                    )
+                    processed += 1
+                    logger.info(
+                        f"Snippet: processed {file_path.name} -> {len(parts)} parts, {len(images)} images"
+                    )
+                except Exception as e:
+                    warnings_list.append(str(e))
+                    logger.error(f"Snippet: failed {file_path}: {e}")
+                    append_manifest_entry(manifest_path, file_path, doc_hash, [], [], warnings_list)
+                    failed += 1
+
+            return json.dumps(
+                {
+                    "processed": processed,
+                    "failed": failed,
+                    "output_root": str(snippets_root),
+                    "manifest_path": str(manifest_path),
+                }
+            )
+
+        except Exception as e:
+            logger.error(f"Snippet generation failed: {e}")
+            return json.dumps({"error": str(e)})
 
 
 def main() -> None:
