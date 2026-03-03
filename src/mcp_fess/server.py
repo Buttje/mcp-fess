@@ -478,6 +478,9 @@ Images are extracted and saved as files; the snippet text contains `<IMAGE: /abs
 markers at the position where each image appears in the document, so an agent that fetches
 this content can read those image paths directly from the local filesystem.
 
+Documents already present in the manifest.jsonl are automatically skipped to avoid
+double-processing.
+
 Requires `fessComposePath` to be set in config.
 
 Args:
@@ -489,9 +492,71 @@ Args:
 Returns:
     JSON with:
     - 'processed': Number of successfully processed files
+    - 'skipped': Number of files skipped because they were already in the manifest
     - 'failed': Number of failed files
     - 'output_root': Path to the snippets output directory
     - 'manifest_path': Path to the manifest.jsonl file"""
+
+        @self.mcp.tool(name=f"fess_{self.domain_id}_delete_snippets")
+        async def delete_snippets(
+            file_path: str,
+            output_folder: str,
+        ) -> str:
+            return await self._handle_delete_snippets(
+                {
+                    "filePath": file_path,
+                    "outputFolder": output_folder,
+                }
+            )
+
+        delete_snippets.__doc__ = """Remove all generated snippets and images for a specific document.
+
+Identifies the document by its original absolute file path, removes all snippet (.md) files
+and extracted images that were generated from it, and updates the manifest.jsonl.
+The original source document is not modified.
+
+Requires `fessComposePath` to be set in config.
+
+Args:
+    file_path: Absolute path of the original source document to delete
+    output_folder: Folder name under the host Fess data mount (e.g. 'ABCD')
+
+Returns:
+    JSON with:
+    - 'found': Whether the document was found in the manifest
+    - 'removed_parts': Number of snippet (.md) files deleted
+    - 'removed_images': Number of image files deleted"""
+
+        @self.mcp.tool(name=f"fess_{self.domain_id}_update_snippets")
+        async def update_snippets(
+            file_path: str,
+            output_folder: str,
+        ) -> str:
+            return await self._handle_update_snippets(
+                {
+                    "filePath": file_path,
+                    "outputFolder": output_folder,
+                }
+            )
+
+        update_snippets.__doc__ = """Re-generate snippets for a specific document.
+
+First removes all existing snippets, images, and manifest entry for the document,
+then re-processes the source file to create fresh snippets and images.
+
+Requires `fessComposePath` to be set in config.
+
+Args:
+    file_path: Absolute path of the original source document to update
+    output_folder: Folder name under the host Fess data mount (e.g. 'ABCD')
+
+Returns:
+    JSON with:
+    - 'updated': True on success, False on failure
+    - 'parts': Number of snippet (.md) files generated (on success)
+    - 'images': Number of image files generated (on success)
+    - 'manifest_path': Path to the manifest.jsonl file (on success)
+    - 'error': Error message (on failure)"""
 
     def _setup_resources(self) -> None:
         """Set up MCP resources using FastMCP decorators."""
@@ -1119,7 +1184,7 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
             from .snippet_engine.compose_parser import find_host_fess_data_dir
             from .snippet_engine.convert import convert_document
             from .snippet_engine.image_store import compute_doc_hash
-            from .snippet_engine.manifest import append_manifest_entry
+            from .snippet_engine.manifest import append_manifest_entry, is_document_in_manifest
             from .snippet_engine.md_writer import write_snippets
             from .snippet_engine.scan import scan_directory
 
@@ -1141,9 +1206,15 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
 
             manifest_path = snippets_root / "manifest.jsonl"
             processed = 0
+            skipped = 0
             failed = 0
 
             for file_path in files:
+                if is_document_in_manifest(manifest_path, file_path):
+                    logger.info(f"Snippet: skipping already-processed {file_path.name}")
+                    skipped += 1
+                    continue
+
                 doc_hash = compute_doc_hash(file_path)
                 warnings_list: list[str] = []
                 try:
@@ -1165,6 +1236,7 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
             return json.dumps(
                 {
                     "processed": processed,
+                    "skipped": skipped,
                     "failed": failed,
                     "output_root": str(snippets_root),
                     "manifest_path": str(manifest_path),
@@ -1173,6 +1245,121 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
 
         except Exception as e:
             logger.error(f"Snippet generation failed: {e}")
+            return json.dumps({"error": str(e)})
+
+    async def _handle_delete_snippets(self, arguments: dict[str, Any]) -> str:
+        """Handle deleteSnippets tool call."""
+        file_path_str = arguments.get("filePath", "")
+        output_folder = arguments.get("outputFolder", "")
+
+        if not file_path_str:
+            return json.dumps({"error": "filePath is required"})
+        if not output_folder:
+            return json.dumps({"error": "outputFolder is required"})
+
+        if not self.config.fessComposePath:
+            return json.dumps({"error": "fessComposePath is not configured"})
+
+        try:
+            from pathlib import Path as _Path
+
+            from .snippet_engine.compose_parser import find_host_fess_data_dir
+            from .snippet_engine.manifest import remove_document_from_manifest
+
+            host_data_dir = find_host_fess_data_dir(
+                self.config.fessComposePath,
+                service_name=self.config.fessComposeService,
+                container_mount=self.config.fessDataMount,
+            )
+
+            snippets_root = host_data_dir / output_folder
+            manifest_path = snippets_root / "manifest.jsonl"
+            file_path = _Path(file_path_str).resolve()
+
+            result = remove_document_from_manifest(manifest_path, file_path)
+            if not result["found"]:
+                logger.warning(f"Snippet delete: document not found in manifest: {file_path}")
+            else:
+                logger.info(
+                    f"Snippet delete: removed {result['removed_parts']} part(s) and "
+                    f"{result['removed_images']} image(s) for {file_path.name}"
+                )
+            return json.dumps(result)
+
+        except Exception as e:
+            logger.error(f"Snippet deletion failed: {e}")
+            return json.dumps({"error": str(e)})
+
+    async def _handle_update_snippets(self, arguments: dict[str, Any]) -> str:
+        """Handle updateSnippets tool call (delete existing artifacts, then re-generate)."""
+        file_path_str = arguments.get("filePath", "")
+        output_folder = arguments.get("outputFolder", "")
+
+        if not file_path_str:
+            return json.dumps({"error": "filePath is required"})
+        if not output_folder:
+            return json.dumps({"error": "outputFolder is required"})
+
+        if not self.config.fessComposePath:
+            return json.dumps({"error": "fessComposePath is not configured"})
+
+        try:
+            from pathlib import Path as _Path
+
+            from .snippet_engine.compose_parser import find_host_fess_data_dir
+            from .snippet_engine.convert import convert_document
+            from .snippet_engine.image_store import compute_doc_hash
+            from .snippet_engine.manifest import (
+                append_manifest_entry,
+                remove_document_from_manifest,
+            )
+            from .snippet_engine.md_writer import write_snippets
+
+            host_data_dir = find_host_fess_data_dir(
+                self.config.fessComposePath,
+                service_name=self.config.fessComposeService,
+                container_mount=self.config.fessDataMount,
+            )
+
+            snippets_root = host_data_dir / output_folder
+            images_root = snippets_root / "images"
+            snippets_root.mkdir(parents=True, exist_ok=True)
+            images_root.mkdir(parents=True, exist_ok=True)
+
+            manifest_path = snippets_root / "manifest.jsonl"
+            file_path = _Path(file_path_str).resolve()
+
+            # Step 1: remove existing artifacts
+            remove_document_from_manifest(manifest_path, file_path)
+
+            # Step 2: re-generate
+            doc_hash = compute_doc_hash(file_path)
+            warnings_list: list[str] = []
+            try:
+                page_lines, images = convert_document(file_path, images_root, doc_hash)
+                parts = write_snippets(file_path, page_lines, snippets_root, doc_hash)
+                append_manifest_entry(
+                    manifest_path, file_path, doc_hash, parts, images, warnings_list
+                )
+                logger.info(
+                    f"Snippet update: processed {file_path.name} -> {len(parts)} parts, {len(images)} images"
+                )
+                return json.dumps(
+                    {
+                        "updated": True,
+                        "parts": len(parts),
+                        "images": len(images),
+                        "manifest_path": str(manifest_path),
+                    }
+                )
+            except Exception as e:
+                warnings_list.append(str(e))
+                logger.error(f"Snippet update: failed {file_path}: {e}")
+                append_manifest_entry(manifest_path, file_path, doc_hash, [], [], warnings_list)
+                return json.dumps({"updated": False, "error": str(e)})
+
+        except Exception as e:
+            logger.error(f"Snippet update failed: {e}")
             return json.dumps({"error": str(e)})
 
 
