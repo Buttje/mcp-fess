@@ -49,12 +49,12 @@ def write_snippets(
     current_bytes = 0
     line_num = 1  # global line counter (continuous across parts)
 
-    def _open_new_part(start_page: int, start_ln: int) -> tuple[Path, TextIOWrapper, int]:
+    def _open_new_part(start_page: int, start_line: int) -> tuple[Path, TextIOWrapper, int]:
         nonlocal part_num
         fname = f"{safe_basename}.{doc_hash}.part{part_num:04d}.md"
         fpath = snippets_root / fname
         fh = fpath.open("w", encoding="utf-8")
-        header = _make_header(original_path, start_page, start_ln)
+        header = _make_header(original_path, start_page, start_line)
         fh.write(header)
         part_num += 1
         output_paths.append(fpath)

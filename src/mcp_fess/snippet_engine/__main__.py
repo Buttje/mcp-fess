@@ -107,9 +107,6 @@ def main() -> None:
         "manifest_path": str(manifest_path),
     }
     print(json.dumps(summary, indent=2))
-    logger.info("Done. Processed: %d, Failed: %d", processed, failed)
-    logger.info("Output root: %s", snippets_root)
-    logger.info("Manifest: %s", manifest_path)
 
 
 if __name__ == "__main__":
