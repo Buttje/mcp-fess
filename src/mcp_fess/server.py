@@ -2,13 +2,17 @@
 
 import argparse
 import asyncio
+import base64
 import json
 import logging
 import re
 import sys
+from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
+from fastmcp.resources import ResourceContent
+from mcp.types import ImageContent
 
 from .config import ServerConfig, ensure_log_directory, load_config
 from .fess_client import FessClient
@@ -165,6 +169,39 @@ def _file_url_to_path(value: str) -> str:
     return value
 
 
+# Known image MIME types by extension
+_IMAGE_MIME_TYPES: dict[str, str] = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+    ".tiff": "image/tiff",
+    ".tif": "image/tiff",
+}
+
+
+def _get_image_mime_type(path: Path) -> str:
+    """Return MIME type for an image file based on its extension."""
+    return _IMAGE_MIME_TYPES.get(path.suffix.lower(), "image/png")
+
+
+def _encode_image_key(image_path: str) -> str:
+    """Encode an absolute image path as a URL-safe base64 key (no padding).
+
+    Use this to construct the resource URI:
+        fess://<domain_id>/image/<image_key>
+    """
+    return base64.urlsafe_b64encode(image_path.encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def _decode_image_key(image_key: str) -> str:
+    """Decode a URL-safe base64 image key back to the absolute filesystem path."""
+    padding = (4 - len(image_key) % 4) % 4
+    return base64.urlsafe_b64decode(image_key + "=" * padding).decode("utf-8")
+
+
 class FessServer:
     """MCP server implementation for Fess."""
 
@@ -204,12 +241,14 @@ fessLabel: {domain.labelFilter}"""
 
     def _descriptor_workflow(self) -> str:
         """Generate the shared efficient agent workflow text."""
-        return """**Efficient agent workflow:**
+        return f"""**Efficient agent workflow:**
 
 1. (Optional) Call `list_labels` to pick a label scope if you need to restrict the search space.
 2. Call `search` to get relevant hits and collect `doc_id`s.
 3. Call `fetch_content_chunk` (preferred) or `fetch_content_by_id` to read extracted UTF-8 text evidence from the index.
-   - Text content may contain `<IMAGE: /absolute/path/to/image.png>` markers. When you encounter such a marker, read the image directly from the local filesystem path to analyse its content in context.
+   - Text content may contain `<IMAGE: /absolute/path/to/image.png>` markers for images extracted from the source document.
+   - **Way 1 - tool**: Call `fess_{self.domain_id}_get_image(image_path='/absolute/path/to/image.png')` to receive the image data directly.
+   - **Way 2 - resource**: Read `fess://{self.domain_id}/image/<image_key>` where `image_key = base64.urlsafe_b64encode(image_path.encode()).decode().rstrip('=')`.
 4. (Optional) Call `get_original_doc` with a `doc_id` to retrieve the original filesystem path of the source document.
 5. Refine the query using evidence; optionally use `suggest` and `popular_words` to expand/pivot."""
 
@@ -217,8 +256,11 @@ fessLabel: {domain.labelFilter}"""
         """Generate the text source explanation."""
         return (
             "**Text source:** Index fields only (priority: `content` → `body` → `digest`). No origin URL fetch.\n"
-            "**Images:** Text content may include `<IMAGE: /absolute/path>` markers for extracted images. "
-            "Read those paths directly from the local filesystem to analyse the image in context."
+            "**Images:** Text content may include `<IMAGE: /absolute/path>` markers for images extracted "
+            "from the source document on the local filesystem. "
+            f"Retrieve images via the `fess_{self.domain_id}_get_image` tool (pass the path directly) "
+            f"or via the `fess://{self.domain_id}/image/{{image_key}}` resource where "
+            "`image_key = base64.urlsafe_b64encode(image_path.encode()).decode().rstrip('=')`."
         )
 
     def _descriptor_limits(self) -> str:
@@ -558,6 +600,26 @@ Returns:
     - 'manifest_path': Path to the manifest.jsonl file (on success)
     - 'error': Error message (on failure)"""
 
+        @self.mcp.tool(name=f"fess_{self.domain_id}_get_image")
+        async def get_image(image_path: str) -> ImageContent:
+            return await self._handle_get_image({"imagePath": image_path})
+
+        get_image.__doc__ = f"""Return the binary content of an image extracted from a source document.
+
+Call this tool whenever you encounter an `<IMAGE: /absolute/path>` marker inside document content
+retrieved by `fetch_content_chunk` or `fetch_content_by_id`. Pass the absolute path from the
+marker directly to `image_path`.
+
+Alternatively you can access the same image as an MCP resource:
+    URI: fess://{self.domain_id}/image/<image_key>
+    where `image_key = base64.urlsafe_b64encode(image_path.encode()).decode().rstrip('=')`.
+
+Args:
+    image_path: Absolute filesystem path of the image file (from an `<IMAGE: /path>` marker)
+
+Returns:
+    Image content with base64-encoded data and MIME type (e.g. image/png, image/jpeg)."""
+
     def _setup_resources(self) -> None:
         """Set up MCP resources using FastMCP decorators."""
 
@@ -630,6 +692,22 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
 
         # Set dynamic descriptor for read_labels resource
         read_labels.__doc__ = """Available Fess labels with descriptions."""
+
+        @self.mcp.resource(f"fess://{self.domain_id}/image/{{image_key}}")
+        async def read_image(image_key: str) -> ResourceContent:
+            return await self._handle_read_image_resource({"imageKey": image_key})
+
+        # Set dynamic descriptor for read_image resource
+        read_image.__doc__ = f"""Binary content of an image extracted from a source document.
+
+Use this resource when you encounter an `<IMAGE: /absolute/path>` marker inside document content.
+Construct the URI by encoding the absolute path as URL-safe base64 (no padding):
+    image_key = base64url_encode(image_path)
+    URI: fess://{self.domain_id}/image/<image_key>
+
+Alternatively, use the `get_image` tool which accepts the absolute path directly.
+
+Returns the raw image bytes with the appropriate MIME type (e.g. image/png, image/jpeg)."""
 
     def _validate_and_clamp_snippet_args(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Validate and clamp snippet generation arguments against configured limits.
@@ -1162,6 +1240,42 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
         except Exception as e:
             logger.error(f"Failed to get original doc path: {e}")
             return json.dumps({"error": str(e)})
+
+    async def _handle_get_image(self, arguments: dict[str, Any]) -> ImageContent:
+        """Handle getImage tool call — read an image file and return its content."""
+        image_path_str = arguments.get("imagePath", "")
+        if not image_path_str:
+            raise ValueError("imagePath is required")
+
+        image_path = Path(image_path_str)
+        if not image_path.is_file():
+            raise ValueError(f"Image file not found: {image_path_str}")
+
+        mime_type = _get_image_mime_type(image_path)
+        image_data = image_path.read_bytes()
+        b64_data = base64.standard_b64encode(image_data).decode("ascii")
+        logger.debug(f"MCP tool response: get_image path={image_path_str} mime={mime_type} size={len(image_data)}")
+        return ImageContent(type="image", data=b64_data, mimeType=mime_type)
+
+    async def _handle_read_image_resource(self, arguments: dict[str, Any]) -> ResourceContent:
+        """Handle image resource read — decode the image key and return binary content."""
+        image_key = arguments.get("imageKey", "")
+        if not image_key:
+            raise ValueError("imageKey is required")
+
+        try:
+            image_path_str = _decode_image_key(image_key)
+        except Exception as exc:
+            raise ValueError(f"Invalid image_key: cannot decode '{image_key}'") from exc
+
+        image_path = Path(image_path_str)
+        if not image_path.is_file():
+            raise ValueError(f"Image file not found: {image_path_str}")
+
+        mime_type = _get_image_mime_type(image_path)
+        image_data = image_path.read_bytes()
+        logger.debug(f"MCP resource read: image key={image_key} path={image_path_str} mime={mime_type} size={len(image_data)}")
+        return ResourceContent(image_data, mime_type=mime_type)
 
     async def _handle_generate_snippets(self, arguments: dict[str, Any]) -> str:
         """Handle generateSnippets tool call."""

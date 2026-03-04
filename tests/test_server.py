@@ -1022,3 +1022,124 @@ def test_validate_and_clamp_snippet_args_custom_tags(fess_server):
     )
     assert params["snippet_tag_pre"] == "<mark>"
     assert params["snippet_tag_post"] == "</mark>"
+
+
+# --- _encode_image_key / _decode_image_key ---
+
+
+def test_encode_decode_image_key_roundtrip():
+    """Test that encoding and decoding an image path is a lossless roundtrip."""
+    from mcp_fess.server import _decode_image_key, _encode_image_key
+
+    path = "/data/fess/MY_DOCS/images/abc123_p1_i0_def456.png"
+    key = _encode_image_key(path)
+    assert "/" not in key, "Encoded key should not contain slashes"
+    assert "=" not in key, "Encoded key should have no padding"
+    assert _decode_image_key(key) == path
+
+
+def test_encode_image_key_is_url_safe():
+    """Encoded key must only contain URL-safe characters."""
+    import re
+
+    from mcp_fess.server import _encode_image_key
+
+    path = "/some/path with spaces/and+special=chars/img.png"
+    key = _encode_image_key(path)
+    assert re.fullmatch(r"[A-Za-z0-9_-]+", key), "Key must be URL-safe base64"
+
+
+# --- _handle_get_image ---
+
+
+@pytest.mark.asyncio
+async def test_handle_get_image_missing_path(fess_server):
+    """_handle_get_image raises ValueError when imagePath is missing."""
+    with pytest.raises(ValueError, match="imagePath is required"):
+        await fess_server._handle_get_image({})
+
+
+@pytest.mark.asyncio
+async def test_handle_get_image_file_not_found(fess_server, tmp_path):
+    """_handle_get_image raises ValueError when the image file does not exist."""
+    missing = str(tmp_path / "nonexistent.png")
+    with pytest.raises(ValueError, match="Image file not found"):
+        await fess_server._handle_get_image({"imagePath": missing})
+
+
+@pytest.mark.asyncio
+async def test_handle_get_image_returns_image_content(fess_server, tmp_path):
+    """_handle_get_image reads a PNG file and returns ImageContent."""
+    import base64
+
+    from mcp.types import ImageContent
+
+    # Write a minimal fake PNG (just a few bytes; MIME type is determined by extension)
+    img_file = tmp_path / "test_img.png"
+    img_file.write_bytes(b"\x89PNG fake image bytes")
+
+    result = await fess_server._handle_get_image({"imagePath": str(img_file)})
+
+    assert isinstance(result, ImageContent)
+    assert result.type == "image"
+    assert result.mimeType == "image/png"
+    assert base64.standard_b64decode(result.data) == b"\x89PNG fake image bytes"
+
+
+@pytest.mark.asyncio
+async def test_handle_get_image_jpeg_mime_type(fess_server, tmp_path):
+    """_handle_get_image uses image/jpeg MIME type for .jpg files."""
+    from mcp.types import ImageContent
+
+    img_file = tmp_path / "photo.jpg"
+    img_file.write_bytes(b"\xff\xd8\xff fake jpeg")
+
+    result = await fess_server._handle_get_image({"imagePath": str(img_file)})
+
+    assert isinstance(result, ImageContent)
+    assert result.mimeType == "image/jpeg"
+
+
+# --- _handle_read_image_resource ---
+
+
+@pytest.mark.asyncio
+async def test_handle_read_image_resource_missing_key(fess_server):
+    """_handle_read_image_resource raises ValueError when imageKey is missing."""
+    with pytest.raises(ValueError, match="imageKey is required"):
+        await fess_server._handle_read_image_resource({})
+
+
+@pytest.mark.asyncio
+async def test_handle_read_image_resource_invalid_key(fess_server):
+    """_handle_read_image_resource raises ValueError for a non-decodable key."""
+    with pytest.raises(ValueError, match="Invalid image_key"):
+        await fess_server._handle_read_image_resource({"imageKey": "!!!not_valid_b64!!!"})
+
+
+@pytest.mark.asyncio
+async def test_handle_read_image_resource_file_not_found(fess_server):
+    """_handle_read_image_resource raises ValueError when the decoded path does not exist."""
+    from mcp_fess.server import _encode_image_key
+
+    key = _encode_image_key("/nonexistent/path/img.png")
+    with pytest.raises(ValueError, match="Image file not found"):
+        await fess_server._handle_read_image_resource({"imageKey": key})
+
+
+@pytest.mark.asyncio
+async def test_handle_read_image_resource_returns_binary(fess_server, tmp_path):
+    """_handle_read_image_resource returns ResourceContent with binary image data."""
+    from fastmcp.resources import ResourceContent
+
+    from mcp_fess.server import _encode_image_key
+
+    img_file = tmp_path / "chart.png"
+    img_file.write_bytes(b"PNG binary content")
+
+    key = _encode_image_key(str(img_file))
+    result = await fess_server._handle_read_image_resource({"imageKey": key})
+
+    assert isinstance(result, ResourceContent)
+    assert result.content == b"PNG binary content"
+    assert result.mime_type == "image/png"
