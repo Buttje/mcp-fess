@@ -33,17 +33,15 @@ def test_label_descriptor():
 
 def test_domain_config():
     """Test domain configuration."""
-    domain = DomainConfig(id="test", name="Test Domain", description="Test")
-    assert domain.id == "test"
+    domain = DomainConfig(name="Test Domain", description="Test")
     assert domain.name == "Test Domain"
 
 
 def test_domain_config_with_label_filter():
     """Test domain configuration with labelFilter (backward compatibility)."""
     domain = DomainConfig(
-        id="test", name="Test Domain", description="Test", labelFilter="test_label"
+        name="Test Domain", description="Test", labelFilter="test_label"
     )
-    assert domain.id == "test"
     assert domain.labelFilter == "test_label"
 
 
@@ -102,7 +100,6 @@ def test_server_config_validation():
     config_data = {
         "fessBaseUrl": "http://localhost:8080/",
         "domain": {
-            "id": "test",
             "name": "Test",
         },
     }
@@ -119,7 +116,6 @@ def test_server_config_minimal():
     }
     config = ServerConfig(**config_data)
     assert config.fessBaseUrl == "http://localhost:8080"
-    assert config.domain.id == "default"
     assert config.domain.name == "Default Domain"
     assert config.domain.description is None
     assert config.domain.labelFilter is None
@@ -132,7 +128,6 @@ def test_server_config_with_labels():
     config_data = {
         "fessBaseUrl": "http://localhost:8080/",
         "domain": {
-            "id": "test",
             "name": "Test",
         },
         "labels": {
@@ -158,7 +153,6 @@ def test_server_config_backward_compat_label_filter():
     config_data = {
         "fessBaseUrl": "http://localhost:8080/",
         "domain": {
-            "id": "test",
             "name": "Test",
             "labelFilter": "test_label",
         },
@@ -175,7 +169,6 @@ def test_server_config_validation_empty_url():
     config_data = {
         "fessBaseUrl": "",
         "domain": {
-            "id": "test",
             "name": "Test",
         },
     }
@@ -211,7 +204,6 @@ def test_load_config_valid(tmp_path, monkeypatch):
       config_data = {
           "fessBaseUrl": "http://localhost:8080",
           "domain": {
-              "id": "test",
               "name": "Test Domain",
               "description": "Test",
           },
@@ -220,5 +212,4 @@ def test_load_config_valid(tmp_path, monkeypatch):
 
       config = load_config()
       assert config.fessBaseUrl == "http://localhost:8080"
-      assert config.domain.id == "test"
       assert config.domain.name == "Test Domain"

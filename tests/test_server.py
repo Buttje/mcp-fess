@@ -15,7 +15,6 @@ def test_config():
     return ServerConfig(
         fessBaseUrl="http://localhost:8080",
         domain=DomainConfig(
-            id="test_domain",
             name="Test Domain",
             description="Test description",
         ),
@@ -35,7 +34,6 @@ def test_main_exists():
 
 def test_server_initialization(fess_server, test_config):
     """Test server initialization."""
-    assert fess_server.domain_id == "test_domain"
     assert fess_server.protocol_version == "2025-03-26"
     assert fess_server.config == test_config
 
@@ -50,7 +48,6 @@ def test_get_domain_block(fess_server):
     """Test domain block generation."""
     domain_block = fess_server._get_domain_block()
     assert "[Knowledge Domain]" in domain_block
-    assert "id: test_domain" in domain_block
     assert "name: Test Domain" in domain_block
     assert "description: Test description" in domain_block
 
@@ -295,7 +292,6 @@ def test_main_with_stdio():
     ):
         mock_config = MagicMock()
         mock_config.domain.name = "Test"
-        mock_config.domain.id = "test"
         mock_config.fessBaseUrl = "http://localhost:8080"
         mock_config.logging.level = "info"
         mock_config.httpTransport.bindAddress = "127.0.0.1"
@@ -323,7 +319,6 @@ def test_main_with_http():
     ):
         mock_config = MagicMock()
         mock_config.domain.name = "Test"
-        mock_config.domain.id = "test"
         mock_config.fessBaseUrl = "http://localhost:8080"
         mock_config.logging.level = "info"
         mock_config.httpTransport.bindAddress = "127.0.0.1"
@@ -351,7 +346,6 @@ def test_main_with_debug():
     ):
         mock_config = MagicMock()
         mock_config.domain.name = "Test"
-        mock_config.domain.id = "test"
         mock_config.fessBaseUrl = "http://localhost:8080"
         mock_config.logging.level = "info"
         mock_config.httpTransport.bindAddress = "127.0.0.1"
@@ -381,7 +375,6 @@ def test_main_with_cody_flag():
     ):
         mock_config = MagicMock()
         mock_config.domain.name = "Test"
-        mock_config.domain.id = "test"
         mock_config.fessBaseUrl = "http://localhost:8080"
         mock_config.logging.level = "info"
         mock_config.httpTransport.bindAddress = "127.0.0.1"
@@ -429,7 +422,6 @@ def test_main_keyboard_interrupt():
     ):
         mock_config = MagicMock()
         mock_config.domain.name = "Test"
-        mock_config.domain.id = "test"
         mock_config.fessBaseUrl = "http://localhost:8080"
         mock_config.logging.level = "info"
         mock_config.httpTransport.bindAddress = "127.0.0.1"
@@ -455,7 +447,6 @@ def test_main_unexpected_error():
     ):
         mock_config = MagicMock()
         mock_config.domain.name = "Test"
-        mock_config.domain.id = "test"
         mock_config.fessBaseUrl = "http://localhost:8080"
         mock_config.logging.level = "info"
         mock_config.httpTransport.bindAddress = "127.0.0.1"
@@ -483,7 +474,6 @@ def test_main_non_localhost_bind_rejected():
     ):
         mock_config = MagicMock()
         mock_config.domain.name = "Test"
-        mock_config.domain.id = "test"
         mock_config.fessBaseUrl = "http://localhost:8080"
         mock_config.logging.level = "info"
         mock_config.httpTransport.bindAddress = "0.0.0.0"
@@ -512,7 +502,6 @@ def test_main_non_localhost_bind_allowed():
     ):
         mock_config = MagicMock()
         mock_config.domain.name = "Test"
-        mock_config.domain.id = "test"
         mock_config.fessBaseUrl = "http://localhost:8080"
         mock_config.logging.level = "info"
         mock_config.httpTransport.bindAddress = "0.0.0.0"
@@ -535,7 +524,6 @@ def test_get_domain_block_without_description(test_config):
     domain_block = server._get_domain_block()
 
     assert "[Knowledge Domain]" in domain_block
-    assert "id: test_domain" in domain_block
     assert "name: Test Domain" in domain_block
     assert "description:" not in domain_block
 
@@ -770,7 +758,6 @@ def test_main_with_port_argument():
     ):
         mock_config = MagicMock()
         mock_config.domain.name = "Test"
-        mock_config.domain.id = "test"
         mock_config.fessBaseUrl = "http://localhost:8080"
         mock_config.logging.level = "info"
         mock_config.httpTransport.bindAddress = "127.0.0.1"

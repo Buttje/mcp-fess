@@ -20,7 +20,6 @@ def valid_config_dict():
     return {
         "fessBaseUrl": "http://localhost:8080",
         "domain": {
-            "id": "finance",
             "name": "Finance Domain",
             "description": "Financial data and reports",
         },
@@ -154,7 +153,6 @@ async def test_at_mcp_001_initialize_flow(valid_config):
 
     # Verify server was created
     assert server.mcp is not None
-    assert server.domain_id == "finance"
 
     await server.cleanup()
 
@@ -189,13 +187,11 @@ async def test_at_tool_001_tool_listing(valid_config):
     domain_block = server._get_domain_block()
 
     assert "[Knowledge Domain]" in domain_block
-    assert f"id: {valid_config.domain.id}" in domain_block
     assert f"name: {valid_config.domain.name}" in domain_block
     # Domain block no longer includes fessLabel (that's now in defaultLabel config)
 
     # Tools are registered in the MCP server
-    # We verify domain_id is used in tool naming
-    assert server.domain_id == "finance"
+    assert server.mcp is not None
 
     await server.cleanup()
 
@@ -412,7 +408,6 @@ async def test_at_res_002_domain_block_in_resources(valid_config):
     domain_block = server._get_domain_block()
 
     assert "[Knowledge Domain]" in domain_block
-    assert f"id: {valid_config.domain.id}" in domain_block
     assert f"name: {valid_config.domain.name}" in domain_block
     # Domain block no longer includes fessLabel (that's now in defaultLabel config)
 

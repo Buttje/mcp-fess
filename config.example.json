@@ -1,7 +1,6 @@
 {
   "fessBaseUrl": "http://localhost:8080",
   "domain": {
-    "id": "my_domain",
     "name": "My Knowledge Domain",
     "description": "Description of the knowledge domain"
   },
