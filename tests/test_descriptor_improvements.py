@@ -137,7 +137,9 @@ def test_descriptor_workflow_mentions_get_original_doc(fess_server):
 
 
 def test_descriptor_text_source_mentions_image_markers(fess_server):
-    """Test that text source descriptor mentions IMAGE markers."""
+    """Test that text source descriptor mentions IMAGE markers and retrieval methods."""
     text_source = fess_server._descriptor_text_source()
     assert "<IMAGE:" in text_source
-    assert "local filesystem" in text_source or "filesystem" in text_source
+    # Should direct agents to use the MCP tool or resource, not raw filesystem access
+    assert "fess_get_image" in text_source
+    assert "fess:///image/" in text_source
