@@ -313,12 +313,12 @@ mcp-fess-snippets --input /path/to/docs --output-folder MY_DOCS [--include '**/*
 
 ### MCP Tools
 
-- **`fess_<domain>_get_original_doc`** — Retrieve the original filesystem path for an indexed document by ID.
-- **`fess_<domain>_generate_snippets`** — Scan a directory, convert documents to Markdown snippets, and write them under the configured Fess data mount.
+- **`fess_get_original_doc`** — Retrieve the original filesystem path for an indexed document by ID.
+- **`fess_generate_snippets`** — Scan a directory, convert documents to Markdown snippets, and write them under the configured Fess data mount.
 
 ## MCP Tools
 
-The server exposes the following tools (prefixed with `fess_<domain_id>_`):
+The server exposes the following tools (prefixed with `fess_`):
 
 ### 1. Search Tool
 Search documents in Fess. **Use this tool whenever you need factual internal information; don't guess—search first.**
@@ -427,9 +427,9 @@ JSON with:
 ## MCP Resources
 
 Documents and labels are exposed as resources with URIs:
-- `fess://<domain_id>/doc/<doc_id>` - Document metadata. Use `doc/{doc_id}/content` or the content fetch tools to retrieve extracted text.
-- `fess://<domain_id>/doc/<doc_id>/content` - Document extracted text (index-only). Returns up to the server's maximum chunk limit. For longer documents, use `fetch_content_chunk` to iterate through the full extracted text.
-- `fess://<domain_id>/labels` - Available labels catalog with descriptions.
+- `fess:///doc/<doc_id>` - Document metadata. Use `doc/{doc_id}/content` or the content fetch tools to retrieve extracted text.
+- `fess:///doc/<doc_id>/content` - Document extracted text (index-only). Returns up to the server's maximum chunk limit. For longer documents, use `fetch_content_chunk` to iterate through the full extracted text.
+- `fess:///labels` - Available labels catalog with descriptions.
 
 ## Best Practices for Agents
 

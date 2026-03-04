@@ -21,10 +21,11 @@ class LabelDescriptor(BaseModel):
 class DomainConfig(BaseModel):
     """Domain configuration."""
 
-    id: str
     name: str
     description: str | None = None
     labelFilter: str | None = Field(default=None, alias="labelFilter")
+
+    model_config = {"extra": "ignore", "populate_by_name": True}
 
 
 class HttpTransportConfig(BaseModel):
@@ -93,7 +94,7 @@ class ServerConfig(BaseModel):
 
     fessBaseUrl: str
     domain: DomainConfig = Field(
-        default_factory=lambda: DomainConfig(id="default", name="Default Domain", description=None)
+        default_factory=lambda: DomainConfig(name="Default Domain", description=None)
     )
     labels: dict[str, LabelDescriptor] = Field(default_factory=dict)
     defaultLabel: str = "all"

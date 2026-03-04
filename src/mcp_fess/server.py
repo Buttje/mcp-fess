@@ -173,9 +173,8 @@ class FessServer:
         self.protocol_version = protocol_version
         self.fess_client = FessClient(config.fessBaseUrl, config.timeouts.fessRequestTimeoutMs)
 
-        server_name = f"mcp-fess-{config.domain.id}"
+        server_name = "mcp-fess"
         self.mcp = FastMCP(name=server_name)
-        self.domain_id = config.domain.id
         self.jobs: dict[str, dict[str, Any]] = {}
         self.default_label = config.get_effective_default_label()
 
@@ -197,7 +196,6 @@ class FessServer:
         domain = self.config.domain
         desc = f"description: {domain.description}" if domain.description else ""
         return f"""[Knowledge Domain]
-id: {domain.id}
 name: {domain.name}
 {desc}
 fessLabel: {domain.labelFilter}"""
@@ -228,7 +226,7 @@ fessLabel: {domain.labelFilter}"""
     def _setup_tools(self) -> None:
         """Set up MCP tools using FastMCP decorators."""
 
-        @self.mcp.tool(name=f"fess_{self.domain_id}_search")
+        @self.mcp.tool(name="fess_search")
         async def search(
             query: str,
             label: str | None = None,
@@ -299,7 +297,7 @@ Args:
     snippet_tag_post: Closing highlight tag (default '</em>')
     snippet_scan_max_chars: Max chars of document text to scan for matches (default {self.config.limits.snippetScanMaxChars})"""
 
-        @self.mcp.tool(name=f"fess_{self.domain_id}_suggest")
+        @self.mcp.tool(name="fess_suggest")
         async def suggest(
             prefix: str,
             num: int = 10,
@@ -325,7 +323,7 @@ Args:
     fields: Fields to search for suggestions
     lang: Search language"""
 
-        @self.mcp.tool(name=f"fess_{self.domain_id}_popular_words")
+        @self.mcp.tool(name="fess_popular_words")
         async def popular_words(
             seed: int | None = None,
             field: str | None = None,
@@ -345,7 +343,7 @@ Args:
     seed: Random seed for word selection
     field: Field to extract popular words from"""
 
-        @self.mcp.tool(name=f"fess_{self.domain_id}_list_labels")
+        @self.mcp.tool(name="fess_list_labels")
         async def list_labels() -> str:
             return await self._handle_list_labels()
 
@@ -355,14 +353,14 @@ Use this at the start when query intent is unclear or you need a constrained sea
 
 Returns label values with descriptions, examples, and availability status."""
 
-        @self.mcp.tool(name=f"fess_{self.domain_id}_health")
+        @self.mcp.tool(name="fess_health")
         async def health() -> str:
             return await self._handle_health()
 
         # Set dynamic descriptor for health tool
         health.__doc__ = """Check the health status of the underlying Fess server."""
 
-        @self.mcp.tool(name=f"fess_{self.domain_id}_job_get")
+        @self.mcp.tool(name="fess_job_get")
         async def job_get(job_id: str) -> str:
             return await self._handle_job_get({"jobId": job_id})
 
@@ -372,7 +370,7 @@ Returns label values with descriptions, examples, and availability status."""
 Args:
     job_id: The job ID to query"""
 
-        @self.mcp.tool(name=f"fess_{self.domain_id}_fetch_content_by_id")
+        @self.mcp.tool(name="fess_fetch_content_by_id")
         async def fetch_content_by_id(doc_id: str) -> str:
             return await self._handle_fetch_content_by_id({"docId": doc_id})
 
@@ -394,7 +392,7 @@ Returns:
     - 'totalLength': Total document length in characters
     - 'truncated': Boolean indicating if content was truncated due to size limits"""
 
-        @self.mcp.tool(name=f"fess_{self.domain_id}_fetch_content_chunk")
+        @self.mcp.tool(name="fess_fetch_content_chunk")
         async def fetch_content_chunk(
             doc_id: str,
             offset: int = 0,
@@ -434,7 +432,7 @@ Returns:
     - 'length': Actual length of returned content
     - 'totalLength': Total document length in characters"""
 
-        @self.mcp.tool(name=f"fess_{self.domain_id}_get_original_doc")
+        @self.mcp.tool(name="fess_get_original_doc")
         async def get_original_doc(document_id: str) -> str:
             return await self._handle_get_original_doc({"documentId": document_id})
 
@@ -454,7 +452,7 @@ Returns:
     JSON with:
     - 'original_path': Absolute filesystem path of the original document"""
 
-        @self.mcp.tool(name=f"fess_{self.domain_id}_generate_snippets")
+        @self.mcp.tool(name="fess_generate_snippets")
         async def generate_snippets(
             input_dir: str,
             output_folder: str,
@@ -497,7 +495,7 @@ Returns:
     - 'output_root': Path to the snippets output directory
     - 'manifest_path': Path to the manifest.jsonl file"""
 
-        @self.mcp.tool(name=f"fess_{self.domain_id}_delete_snippets")
+        @self.mcp.tool(name="fess_delete_snippets")
         async def delete_snippets(
             file_path: str,
             output_folder: str,
@@ -527,7 +525,7 @@ Returns:
     - 'removed_parts': Number of snippet (.md) files deleted
     - 'removed_images': Number of image files deleted"""
 
-        @self.mcp.tool(name=f"fess_{self.domain_id}_update_snippets")
+        @self.mcp.tool(name="fess_update_snippets")
         async def update_snippets(
             file_path: str,
             output_folder: str,
@@ -561,7 +559,7 @@ Returns:
     def _setup_resources(self) -> None:
         """Set up MCP resources using FastMCP decorators."""
 
-        @self.mcp.resource(f"fess://{self.domain_id}/doc/{{doc_id}}")
+        @self.mcp.resource("fess:///doc/{doc_id}")
         async def read_doc(doc_id: str) -> str:
             try:
                 # Use default label if it's not "all"
@@ -588,7 +586,7 @@ Returns:
         read_doc.__doc__ = """Document metadata for a given `doc_id`.
 Use `doc/{doc_id}/content` or the content fetch tools to retrieve extracted text."""
 
-        @self.mcp.resource(f"fess://{self.domain_id}/doc/{{doc_id}}/content")
+        @self.mcp.resource("fess:///doc/{doc_id}/content")
         async def read_doc_content(doc_id: str) -> str:
             try:
                 # Use default label if it's not "all"
@@ -624,7 +622,7 @@ For longer documents, use `fetch_content_chunk` to iterate through the full extr
 
 {self._descriptor_limits()}"""
 
-        @self.mcp.resource(f"fess://{self.domain_id}/labels")
+        @self.mcp.resource("fess:///labels")
         async def read_labels() -> str:
             return await self._handle_list_labels()
 
@@ -1391,7 +1389,7 @@ def main() -> None:
         logger, _ = setup_logging(log_dir, args.debug, config.logging.level)
 
         logger.info("Starting MCP-Fess server")
-        logger.info(f"Domain: {config.domain.name} (ID: {config.domain.id})")
+        logger.info(f"Domain: {config.domain.name}")
         logger.info(f"Fess URL: {config.fessBaseUrl}")
         logger.info(f"Transport: {args.transport}")
         logger.info(f"Protocol version: {'2024-11-05' if args.cody else '2025-03-26'}")
