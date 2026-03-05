@@ -35,6 +35,11 @@ def convert_document(
 
         return extract_docx(file_path, images_root, doc_hash)
 
+    if suffix == ".odt":
+        from .odt_extract import extract_odt
+
+        return extract_odt(file_path, images_root, doc_hash)
+
     # Default: plain text
     from .text_extract import extract_text_lines
 

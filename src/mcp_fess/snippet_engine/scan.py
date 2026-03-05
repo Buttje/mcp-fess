@@ -6,7 +6,7 @@ from pathlib import Path
 
 logger = logging.getLogger("mcp_fess.snippet_engine")
 
-SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".rst", ".csv", ".html", ".htm"}
+SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".odt", ".txt", ".md", ".rst", ".csv", ".html", ".htm"}
 
 
 def scan_directory(
