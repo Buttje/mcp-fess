@@ -89,6 +89,13 @@ class ContentFetchConfig(BaseModel):
     enablePdf: bool = False
 
 
+class PathMapping(BaseModel):
+    """A single path prefix mapping for translating container paths to host paths."""
+
+    container: str
+    host: str
+
+
 class ServerConfig(BaseModel):
     """Main server configuration."""
 
@@ -109,6 +116,7 @@ class ServerConfig(BaseModel):
     fessComposeService: str | None = None
     fessDataMount: str = "/data/fess"
     originalPathField: str = "url"
+    pathMappings: list[PathMapping] = Field(default_factory=list)
 
     @field_validator("fessComposePath")
     @classmethod

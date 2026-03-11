@@ -63,5 +63,11 @@
     "allowedHostAllowlist": null,
     "userAgent": "MCP-Fess/1.0",
     "enablePdf": false
-  }
+  },
+  "pathMappings": [
+    {
+      "container": "/data/fess",
+      "host": "/host/path/to/fess/data"
+    }
+  ]
 }

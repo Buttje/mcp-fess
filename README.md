@@ -304,6 +304,27 @@ The snippet engine converts source documents into small Markdown files suitable 
 | `fessComposeService` | `null` | Service name in compose file (auto-detected if null) |
 | `fessDataMount` | `/data/fess` | Container-side mount path for Fess data |
 | `originalPathField` | `url` | Fess field containing the original document path |
+| `pathMappings` | `[]` | List of `{container, host}` prefix mappings for translating container paths to host paths |
+
+### Path Mapping (Docker / Container Setups)
+
+When Fess runs inside Docker, document paths stored in the index refer to the *container* filesystem (e.g. `/data/fess/my-doc.pdf`). The `fess_get_original_doc` tool translates these to host paths in two ways:
+
+1. **Explicit `pathMappings`** — add entries to your `config.json`:
+
+```json
+{
+  "pathMappings": [
+    { "container": "/data/fess", "host": "/host/path/to/fess/data" }
+  ]
+}
+```
+
+   Each entry replaces a container path prefix with the matching host path prefix. The first matching entry wins.
+
+2. **Auto-detect via `fessComposePath`** — if `fessComposePath` points to your compose file, the server reads the volume mapping for `fessDataMount` automatically. No explicit `pathMappings` entry is needed for the data mount in this case.
+
+Explicit `pathMappings` take priority over the compose-based auto-detection.
 
 ### CLI Usage
 
