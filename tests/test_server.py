@@ -572,7 +572,9 @@ async def test_handle_fetch_content_chunk_first_chunk(fess_server):
     """Test fetch_content_chunk handler for first chunk."""
     test_content = "A" * 2000
     mock_search_result = {
-        "data": [{"doc_id": "test_doc", "url": "http://example.com/doc.html", "content": test_content}]
+        "data": [
+            {"doc_id": "test_doc", "url": "http://example.com/doc.html", "content": test_content}
+        ]
     }
 
     with patch.object(
@@ -593,7 +595,9 @@ async def test_handle_fetch_content_chunk_middle_chunk(fess_server):
     """Test fetch_content_chunk handler for middle chunk."""
     test_content = "A" * 3000
     mock_search_result = {
-        "data": [{"doc_id": "test_doc", "url": "http://example.com/doc.html", "content": test_content}]
+        "data": [
+            {"doc_id": "test_doc", "url": "http://example.com/doc.html", "content": test_content}
+        ]
     }
 
     with patch.object(
@@ -612,7 +616,9 @@ async def test_handle_fetch_content_chunk_last_chunk(fess_server):
     """Test fetch_content_chunk handler for last chunk."""
     test_content = "A" * 1500
     mock_search_result = {
-        "data": [{"doc_id": "test_doc", "url": "http://example.com/doc.html", "content": test_content}]
+        "data": [
+            {"doc_id": "test_doc", "url": "http://example.com/doc.html", "content": test_content}
+        ]
     }
 
     with patch.object(
@@ -631,7 +637,9 @@ async def test_handle_fetch_content_chunk_exact_end(fess_server):
     """Test fetch_content_chunk handler at exact end of content."""
     test_content = "A" * 1000
     mock_search_result = {
-        "data": [{"doc_id": "test_doc", "url": "http://example.com/doc.html", "content": test_content}]
+        "data": [
+            {"doc_id": "test_doc", "url": "http://example.com/doc.html", "content": test_content}
+        ]
     }
 
     with patch.object(
@@ -677,7 +685,9 @@ async def test_handle_fetch_content_chunk_default_length(fess_server):
     """Test fetch_content_chunk handler uses default length from config."""
     test_content = "A" * 2000000  # 2MB content
     mock_search_result = {
-        "data": [{"doc_id": "test_doc", "url": "http://example.com/doc.html", "content": test_content}]
+        "data": [
+            {"doc_id": "test_doc", "url": "http://example.com/doc.html", "content": test_content}
+        ]
     }
 
     with patch.object(
@@ -694,7 +704,9 @@ async def test_handle_fetch_content_chunk_default_length(fess_server):
 async def test_handle_fetch_content_chunk_exceeds_max_chunk_size(fess_server):
     """Test fetch_content_chunk handler returns error when length exceeds maxChunkBytes."""
     max_chunk = fess_server.config.limits.maxChunkBytes
-    with pytest.raises(ValueError, match=f"Requested chunk size {max_chunk + 1} exceeds server limit {max_chunk}."):
+    with pytest.raises(
+        ValueError, match=f"Requested chunk size {max_chunk + 1} exceeds server limit {max_chunk}."
+    ):
         await fess_server._handle_fetch_content_chunk(
             {"docId": "test_doc", "offset": 0, "length": max_chunk + 1}
         )
@@ -704,9 +716,7 @@ async def test_handle_fetch_content_chunk_exceeds_max_chunk_size(fess_server):
 async def test_handle_fetch_content_chunk_includes_metadata(fess_server):
     """Test fetch_content_chunk response includes metadata with max_chunk_size."""
     test_content = "A" * 500
-    mock_search_result = {
-        "data": [{"doc_id": "test_doc", "content": test_content}]
-    }
+    mock_search_result = {"data": [{"doc_id": "test_doc", "content": test_content}]}
 
     with patch.object(
         fess_server.fess_client, "search", new=AsyncMock(return_value=mock_search_result)
@@ -723,9 +733,7 @@ async def test_handle_fetch_content_chunk_includes_metadata(fess_server):
 async def test_handle_fetch_content_by_id_includes_metadata(fess_server):
     """Test fetch_content_by_id response includes metadata with max_chunk_size."""
     test_content = "Hello world"
-    mock_search_result = {
-        "data": [{"doc_id": "test_doc", "content": test_content}]
-    }
+    mock_search_result = {"data": [{"doc_id": "test_doc", "content": test_content}]}
 
     with patch.object(
         fess_server.fess_client, "search", new=AsyncMock(return_value=mock_search_result)
@@ -739,9 +747,7 @@ async def test_handle_fetch_content_by_id_includes_metadata(fess_server):
 @pytest.mark.asyncio
 async def test_handle_search_pagesize_exceeds_max(fess_server):
     """Test search handler with pageSize exceeding maxPageSize."""
-    with pytest.raises(
-        ValueError, match="pageSize must be between 1 and 100"
-    ):
+    with pytest.raises(ValueError, match="pageSize must be between 1 and 100"):
         await fess_server._handle_search({"query": "test", "pageSize": 101})
 
 
@@ -823,7 +829,6 @@ async def test_run_http_default_port(test_config):
         )
 
 
-
 # --- Tests for snippet functionality ---
 
 
@@ -902,9 +907,7 @@ async def test_handle_search_snippets_only_first_n_docs_enriched(fess_server):
 
     with (
         patch.object(fess_server.fess_client, "search", new=AsyncMock(return_value=mock_result)),
-        patch.object(
-            fess_server.fess_client, "get_extracted_text_by_doc_id", new=get_text_mock
-        ),
+        patch.object(fess_server.fess_client, "get_extracted_text_by_doc_id", new=get_text_mock),
     ):
         result = await fess_server._handle_search(
             {"query": "test", "snippets": True, "snippet_docs": 2}
@@ -1009,3 +1012,195 @@ def test_validate_and_clamp_snippet_args_custom_tags(fess_server):
     )
     assert params["snippet_tag_pre"] == "<mark>"
     assert params["snippet_tag_post"] == "</mark>"
+
+
+# --- Tests for _apply_path_mappings ---
+
+
+def test_apply_path_mappings_basic_replacement():
+    """Test that a container prefix is replaced with the host prefix."""
+    from mcp_fess.server import _apply_path_mappings
+
+    result = _apply_path_mappings("/data/fess/docs/file.pdf", "/data/fess", "/host/data")
+    assert result == "/host/data/docs/file.pdf"
+
+
+def test_apply_path_mappings_exact_match():
+    """Test that an exact match of the container prefix is replaced."""
+    from mcp_fess.server import _apply_path_mappings
+
+    result = _apply_path_mappings("/data/fess", "/data/fess", "/host/data")
+    assert result == "/host/data"
+
+
+def test_apply_path_mappings_no_match():
+    """Test that paths that don't start with the container prefix are unchanged."""
+    from mcp_fess.server import _apply_path_mappings
+
+    result = _apply_path_mappings("/other/path/file.pdf", "/data/fess", "/host/data")
+    assert result == "/other/path/file.pdf"
+
+
+def test_apply_path_mappings_partial_segment_no_match():
+    """Test that a partial directory name match is not replaced."""
+    from mcp_fess.server import _apply_path_mappings
+
+    # /data/fessmore is NOT a match for /data/fess
+    result = _apply_path_mappings("/data/fessmore/file.pdf", "/data/fess", "/host/data")
+    assert result == "/data/fessmore/file.pdf"
+
+
+def test_apply_path_mappings_trailing_slash_on_prefix():
+    """Test that a trailing slash on the container prefix is normalized."""
+    from mcp_fess.server import _apply_path_mappings
+
+    result = _apply_path_mappings("/data/fess/file.pdf", "/data/fess/", "/host/data")
+    assert result == "/host/data/file.pdf"
+
+
+def test_apply_path_mappings_empty_container_prefix():
+    """Test that an empty container prefix leaves the path unchanged."""
+    from mcp_fess.server import _apply_path_mappings
+
+    result = _apply_path_mappings("/data/fess/file.pdf", "", "/host/data")
+    assert result == "/data/fess/file.pdf"
+
+
+# --- Tests for _handle_get_original_doc with path mapping ---
+
+
+@pytest.mark.asyncio
+async def test_handle_get_original_doc_explicit_path_mapping(test_config):
+    """Test that explicit pathMappings are applied to the returned path."""
+    from mcp_fess.config import PathMapping
+
+    test_config.pathMappings = [PathMapping(container="/data/fess", host="/mnt/host/fess")]
+    server = FessServer(test_config)
+
+    mock_result = {"data": [{"url": "file:///data/fess/ARM_CortexM33/arm_cortex_m33.pdf"}]}
+    with patch.object(server.fess_client, "search", new=AsyncMock(return_value=mock_result)):
+        result = await server._handle_get_original_doc({"documentId": "abc123"})
+
+    parsed = json.loads(result)
+    assert "original_path" in parsed
+    assert parsed["original_path"] == "/mnt/host/fess/ARM_CortexM33/arm_cortex_m33.pdf"
+
+
+@pytest.mark.asyncio
+async def test_handle_get_original_doc_no_mapping(test_config):
+    """Test that path is returned unchanged when no mappings are configured."""
+    server = FessServer(test_config)
+
+    mock_result = {"data": [{"url": "file:///data/fess/ARM_CortexM33/arm_cortex_m33.pdf"}]}
+    with patch.object(server.fess_client, "search", new=AsyncMock(return_value=mock_result)):
+        result = await server._handle_get_original_doc({"documentId": "abc123"})
+
+    parsed = json.loads(result)
+    assert parsed["original_path"] == "/data/fess/ARM_CortexM33/arm_cortex_m33.pdf"
+
+
+@pytest.mark.asyncio
+async def test_handle_get_original_doc_compose_based_mapping(tmp_path, test_config):
+    """Test that compose file-based path mapping is applied automatically."""
+    import textwrap
+
+    compose_content = textwrap.dedent("""
+        services:
+          fess:
+            volumes:
+              - /host/fess/data:/data/fess
+    """)
+    compose_file = tmp_path / "compose.yaml"
+    compose_file.write_text(compose_content)
+
+    test_config.fessComposePath = str(compose_file)
+    test_config.fessDataMount = "/data/fess"
+    server = FessServer(test_config)
+
+    mock_result = {"data": [{"url": "file:///data/fess/docs/report.pdf"}]}
+    with patch.object(server.fess_client, "search", new=AsyncMock(return_value=mock_result)):
+        result = await server._handle_get_original_doc({"documentId": "abc123"})
+
+    parsed = json.loads(result)
+    assert "original_path" in parsed
+    assert parsed["original_path"] == "/host/fess/data/docs/report.pdf"
+
+
+@pytest.mark.asyncio
+async def test_handle_get_original_doc_explicit_mapping_takes_priority(tmp_path, test_config):
+    """Test that explicit pathMappings take priority over compose-based mapping."""
+    import textwrap
+
+    from mcp_fess.config import PathMapping
+
+    compose_content = textwrap.dedent("""
+        services:
+          fess:
+            volumes:
+              - /host/fess/data:/data/fess
+    """)
+    compose_file = tmp_path / "compose.yaml"
+    compose_file.write_text(compose_content)
+
+    test_config.fessComposePath = str(compose_file)
+    test_config.fessDataMount = "/data/fess"
+    test_config.pathMappings = [PathMapping(container="/data/fess", host="/explicit/host/path")]
+    server = FessServer(test_config)
+
+    mock_result = {"data": [{"url": "file:///data/fess/docs/report.pdf"}]}
+    with patch.object(server.fess_client, "search", new=AsyncMock(return_value=mock_result)):
+        result = await server._handle_get_original_doc({"documentId": "abc123"})
+
+    parsed = json.loads(result)
+    # Explicit mapping should win over compose-based mapping
+    assert parsed["original_path"] == "/explicit/host/path/docs/report.pdf"
+
+
+@pytest.mark.asyncio
+async def test_handle_get_original_doc_compose_mapping_failure_falls_back_gracefully(
+    tmp_path, test_config
+):
+    """Test that a broken compose file does not crash the handler."""
+    compose_file = tmp_path / "nonexistent.yaml"
+    test_config.fessComposePath = str(compose_file)
+    server = FessServer(test_config)
+
+    mock_result = {"data": [{"url": "file:///data/fess/docs/report.pdf"}]}
+    with patch.object(server.fess_client, "search", new=AsyncMock(return_value=mock_result)):
+        result = await server._handle_get_original_doc({"documentId": "abc123"})
+
+    parsed = json.loads(result)
+    # Falls back to unmapped path (no crash)
+    assert parsed["original_path"] == "/data/fess/docs/report.pdf"
+
+
+# --- Tests for PathMapping config model ---
+
+
+def test_path_mapping_config_model():
+    """Test that PathMapping model works correctly."""
+    from mcp_fess.config import PathMapping
+
+    mapping = PathMapping(container="/data/fess", host="/host/data")
+    assert mapping.container == "/data/fess"
+    assert mapping.host == "/host/data"
+
+
+def test_server_config_path_mappings_default():
+    """Test that pathMappings defaults to empty list."""
+    config = ServerConfig(fessBaseUrl="http://localhost:8080")
+    assert config.pathMappings == []
+
+
+def test_server_config_path_mappings_loaded():
+    """Test that pathMappings can be loaded from a dict."""
+    from mcp_fess.config import PathMapping
+
+    config = ServerConfig(
+        fessBaseUrl="http://localhost:8080",
+        pathMappings=[{"container": "/data/fess", "host": "/host/data"}],
+    )
+    assert len(config.pathMappings) == 1
+    assert isinstance(config.pathMappings[0], PathMapping)
+    assert config.pathMappings[0].container == "/data/fess"
+    assert config.pathMappings[0].host == "/host/data"

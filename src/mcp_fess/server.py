@@ -169,6 +169,26 @@ def _file_url_to_path(value: str) -> str:
     return value
 
 
+def _apply_path_mappings(path: str, container_prefix: str, host_prefix: str) -> str:
+    """Replace a container path prefix with the corresponding host path prefix.
+
+    If ``path`` starts with ``container_prefix``, returns a new path with that
+    prefix replaced by ``host_prefix``.  Otherwise returns ``path`` unchanged.
+    """
+    if not container_prefix:
+        return path
+    # Normalize so that a trailing separator on the prefix doesn't cause a
+    # double-separator in the result.
+    norm_container = container_prefix.rstrip("/").rstrip("\\")
+    if (
+        path == norm_container
+        or path.startswith(norm_container + "/")
+        or path.startswith(norm_container + "\\")
+    ):
+        return host_prefix.rstrip("/").rstrip("\\") + path[len(norm_container) :]
+    return path
+
+
 def _mime_type_for_image(image_path: Path) -> str:
     """Return the MIME type for an image file based on its extension."""
     mime, _ = mimetypes.guess_type(str(image_path))
@@ -1252,9 +1272,7 @@ Returns the raw image bytes with the appropriate MIME type (image/png or image/j
             image_bytes = image_path.read_bytes()
             mime_type = _mime_type_for_image(image_path)
             encoded = base64.standard_b64encode(image_bytes).decode("ascii")
-            return json.dumps(
-                {"data": encoded, "mimeType": mime_type, "path": str(image_path)}
-            )
+            return json.dumps({"data": encoded, "mimeType": mime_type, "path": str(image_path)})
         except Exception as e:
             logger.error(f"Failed to read image '{image_path}': {e}")
             return json.dumps({"error": str(e)})
@@ -1285,6 +1303,34 @@ Returns the raw image bytes with the appropriate MIME type (image/png or image/j
 
             # Convert file:// URL to filesystem path
             original_path = _file_url_to_path(str(raw_value))
+
+            # Apply explicit pathMappings from config (first match wins)
+            mapped = False
+            for mapping in self.config.pathMappings:
+                new_path = _apply_path_mappings(original_path, mapping.container, mapping.host)
+                if new_path != original_path:
+                    original_path = new_path
+                    mapped = True
+                    break
+
+            # If no explicit mapping matched, try to auto-derive from compose file
+            if not mapped and self.config.fessComposePath:
+                try:
+                    from .snippet_engine.compose_parser import find_host_fess_data_dir
+
+                    host_data_dir = find_host_fess_data_dir(
+                        self.config.fessComposePath,
+                        service_name=self.config.fessComposeService,
+                        container_mount=self.config.fessDataMount,
+                    )
+                    original_path = _apply_path_mappings(
+                        original_path,
+                        self.config.fessDataMount,
+                        str(host_data_dir),
+                    )
+                except Exception as e:
+                    logger.debug(f"Path mapping via compose file failed: {e}")
+
             return json.dumps({"original_path": original_path})
 
         except Exception as e:
